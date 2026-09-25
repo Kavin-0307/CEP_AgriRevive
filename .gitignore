@@ -1,0 +1,43 @@
+# Java & Maven
+target/
+*.class
+*.jar
+*.war
+*.ear
+.mvn/wrapper/maven-wrapper.jar
+
+# Eclipse / STS Workspace
+.metadata/
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings/
+.springBeans
+.sts4-cache
+bin/
+
+# IntelliJ IDEA
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# VS Code
+.vscode/
+
+# Environment Variables & Secrets
+.env
+.env.*
+*.properties.local
+*.yml.local
+
+# Operating System Files
+.DS_Store
+Thumbs.db
+
+# Application Specific (Uploads, Logs, etc.)
+logs/
+*.log
+uploads/
+/scratch/

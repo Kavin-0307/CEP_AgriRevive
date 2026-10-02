@@ -1,0 +1,26 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/agrirevive_db
+    username: user
+    password: password
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 15 # Helps handle concurrency
+  jpa:
+    hibernate:
+      ddl-auto: validate # flyway creates schema
+    show-sql: true       # debugging
+    properties:
+      hibernate:
+        format_sql: true
+        
+  data:
+    redis:
+      host: localhost
+      port: 6379
+
+app:
+  jwt:
+    
+    secret: 4KYQDrqkdI4WhZ+59TQavg4ySySUM3uohcx0ZHvml/Y=
+    expiration-ms: 86400000

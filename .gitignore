@@ -41,3 +41,8 @@ logs/
 *.log
 uploads/
 /scratch/
+# Personal / Planning Files
+*.md
+!README.md
+*.txt
+*.pptx

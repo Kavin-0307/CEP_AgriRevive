@@ -35,7 +35,7 @@ public class JwtService {
 		final String email=extractEmail(token);
 		return (email.equals(userEmail))&&!isTokenExpired(token);
 	}
-	private boolean isTokenExpired(String token) {
+	public boolean isTokenExpired(String token) {
 		return extractClaims(token,Claims::getExpiration).before(new Date());
 		
 	}

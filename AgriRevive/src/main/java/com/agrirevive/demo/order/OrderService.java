@@ -10,6 +10,8 @@ import com.agrirevive.demo.user.UserRepository;
 import com.agrirevive.demo.order.dto.OrderRequestDTO;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.kafka.core.KafkaTemplate;
+import com.agrirevive.demo.kafka.dto.OrderPlacedEvent;
 import java.math.BigDecimal;
 import java.util.List;
 @Service
@@ -18,13 +20,14 @@ public class OrderService {
 	private final UserRepository userRepository;
 	private final EcoProductRepository productRepository;
 	private final BiomassListingRepository biomassRepository;
-	
+	private final KafkaTemplate<String,Object> kafkaTemplate;
 	public OrderService(OrderRepository orderRepository,BiomassListingRepository biomassRepository,EcoProductRepository
-			productRepository,UserRepository userRepository) {
+			productRepository,UserRepository userRepository,KafkaTemplate<String,Object> kafkaTemplate) {
 		this.orderRepository=orderRepository;
 		this.biomassRepository=biomassRepository;
 		this.productRepository=productRepository;
 		this.userRepository=userRepository;
+		this.kafkaTemplate=kafkaTemplate;
 	}
 	@Transactional
 	public Order placeBiomassOrder(String buyerEmail,OrderRequestDTO req) {
@@ -38,7 +41,12 @@ public class OrderService {
 		Order order=Order.builder().orderType("BIOMASS").buyer(buyer).seller(listing.getFarmer())
 				.listingId(listing.getId()).quantity(req.getQuantity()).pricePerUnit(req.getOfferedPrice()).totalAmount(req.getQuantity().multiply(req.getOfferedPrice()))
 				.status("REQUESTED").deliveryAddress(req.getDeliveryAddress()).buyerNote(req.getBuyerNote()).build();
-		return orderRepository.save(order);
+		Order savedOrder=orderRepository.save(order);
+		OrderPlacedEvent event=new OrderPlacedEvent(savedOrder.getId(),savedOrder.getOrderType(),
+				buyer.getName(),listing.getFarmer().getName(),savedOrder.getTotalAmount());
+		kafkaTemplate.send("biomass-orders",event);
+		return savedOrder;
+
 	}
 	@Transactional
 	public Order placeProductOrder(String email,OrderRequestDTO req) {

@@ -44,7 +44,18 @@ public class BiomassListing {
 	private String aiVerifiedStatus;
 	@Column(name="admin_remarks")
 	private String adminRemarks;
+	
+	@Column(name="listing_type")
+	private String listingType;
+	@Column(name="highest_bid_amount")
+	private BigDecimal highestBidAmount;
+	@Column(name="highest_bidder_id")
+	private Long highestBidderId;
+	@Column(name="auction_end_time")
+    private LocalDateTime auctionEndTime;
+	
 	@Version
+	
 	private Long version;
 	@Column(name="created_at",insertable=false,updatable=false)
     private LocalDateTime createdAt;

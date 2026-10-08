@@ -8,111 +8,32 @@ import {
   Link, Navigate, NavLink, Route, Routes, useLocation, useNavigate, useParams,
   useSearchParams,
 } from 'react-router-dom'
-
-type Listing = {
-  id: string
-  title: string
-  type: string
-  location: string
-  state: string
-  quantity: number
-  price: number
-  grade: 'A' | 'B' | 'C'
-  moisture: number
-  available: string
-  description: string
-  image: string
-  color: string
-  listingType: 'FIXED_PRICE' | 'AUCTION'
-  auctionEnds?: string
-  highestBid?: number
-  bidCount?: number
-}
-type Buyer = { name: string; email: string; organization: string; phone: string; state: string }
-type BuyerOrder = {
-  id: string
-  listingId: string
-  title: string
-  location: string
-  quantity: number
-  total: number
-  status: 'REQUESTED' | 'ACCEPTED' | 'PAID' | 'IN_TRANSIT' | 'DELIVERED'
-  date: string
-}
-type BidRecord = { listingId: string; amount: number; date: string }
-
-const initialListings: Listing[] = [
-  {
-    id: 'ag-2048', title: 'Premium rice straw', type: 'Rice straw', location: 'Ludhiana, Punjab', state: 'Punjab',
-    quantity: 28, price: 1800, grade: 'A', moisture: 12, available: 'Oct 12, 2026',
-    description: 'Clean, sun-dried paddy straw from the latest harvest. Baled and ready for pickup with consistent quality across the lot.',
-    image: 'https://images.unsplash.com/photo-1500382017468-9049fed747ef?auto=format&fit=crop&w=1200&q=85',
-    color: 'sage', listingType: 'FIXED_PRICE',
-  },
-  {
-    id: 'ag-2049', title: 'Sugarcane bagasse', type: 'Bagasse', location: 'Kolhapur, Maharashtra', state: 'Maharashtra',
-    quantity: 62, price: 1150, grade: 'A', moisture: 18, available: 'Oct 16, 2026',
-    description: 'Uniform fibrous bagasse from a local sugar mill. Ideal for bioenergy applications, supplied in bulk by the tonne.',
-    image: 'https://images.unsplash.com/photo-1595841696677-6489ff3f8cd1?auto=format&fit=crop&w=1200&q=85',
-    color: 'gold', listingType: 'AUCTION', auctionEnds: '2026-10-08T18:00:00', highestBid: 1280, bidCount: 8,
-  },
-  {
-    id: 'ag-2050', title: 'Cotton stalk bales', type: 'Cotton stalk', location: 'Nagpur, Maharashtra', state: 'Maharashtra',
-    quantity: 15, price: 2400, grade: 'B', moisture: 15, available: 'Oct 10, 2026',
-    description: 'Mechanically harvested cotton stalks, neatly bundled for transport. Available from a verified farmer cooperative.',
-    image: 'https://images.unsplash.com/photo-1464226184884-fa280b87c399?auto=format&fit=crop&w=1200&q=85',
-    color: 'rust', listingType: 'FIXED_PRICE',
-  },
-  {
-    id: 'ag-2051', title: 'Wheat straw · Grade A', type: 'Wheat straw', location: 'Karnal, Haryana', state: 'Haryana',
-    quantity: 40, price: 1650, grade: 'A', moisture: 10, available: 'Oct 14, 2026',
-    description: 'Low-moisture wheat straw sourced from a small farmer group. Suitable for animal bedding and biomass processing.',
-    image: 'https://images.unsplash.com/photo-1574323347407-f5e1ad6d020b?auto=format&fit=crop&w=1200&q=85',
-    color: 'wheat', listingType: 'FIXED_PRICE',
-  },
-  {
-    id: 'ag-2052', title: 'Groundnut shells', type: 'Groundnut shells', location: 'Junagadh, Gujarat', state: 'Gujarat',
-    quantity: 22, price: 2100, grade: 'B', moisture: 13, available: 'Oct 18, 2026',
-    description: 'Dry, screened groundnut shells stored under cover. A dependable fuel feedstock with reliable year-round supply.',
-    image: 'https://images.unsplash.com/photo-1601593768794-35f4d8e137c2?auto=format&fit=crop&w=1200&q=85',
-    color: 'olive', listingType: 'AUCTION', auctionEnds: '2026-10-06T15:30:00', highestBid: 2250, bidCount: 12,
-  },
-  {
-    id: 'ag-2053', title: 'Maize cobs & husk', type: 'Maize residue', location: 'Dewas, Madhya Pradesh', state: 'Madhya Pradesh',
-    quantity: 34, price: 1350, grade: 'B', moisture: 16, available: 'Oct 20, 2026',
-    description: 'Mixed maize cobs and husk collected after shelling. Packed loose and ready for bulk collection.',
-    image: 'https://images.unsplash.com/photo-1551754655-cd27e38d2076?auto=format&fit=crop&w=1200&q=85',
-    color: 'corn', listingType: 'FIXED_PRICE',
-  },
-]
-
-const currency = (amount: number) =>
-  new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(amount)
-
-function readStored<T>(key: string, fallback: T): T {
-  const value = localStorage.getItem(key)
-  return value ? (JSON.parse(value) as T) : fallback
-}
-
-function useStoredState<T>(key: string, initial: T) {
-  const [value, setValue] = useState<T>(() => readStored(key, initial))
-  useEffect(() => localStorage.setItem(key, JSON.stringify(value)), [key, value])
-  return [value, setValue] as const
-}
+import {
+  Brand, currency, initialListings, isPubliclyVisible, readStored, useStoredState,
+  type BidRecord, type Buyer, type BuyerOrder, type Listing, type OrderStatus,
+} from './shared'
+import FarmerApp from './farmer/FarmerApp'
 
 export default function App() {
   const [buyer, setBuyer] = useStoredState<Buyer | null>('agri-buyer', null)
-  const [listings] = useStoredState<Listing[]>('agri-listings', initialListings)
+  const [listings, setListings] = useStoredState<Listing[]>('agri-listings', initialListings)
   const [orders, setOrders] = useStoredState<BuyerOrder[]>('agri-orders', [])
   const [bids, setBids] = useStoredState<BidRecord[]>('agri-bids', [])
+  // Buyers only see listings that are live; paused, under-review, sold and ended farmer auctions are hidden.
+  const marketListings = useMemo(() => listings.filter(item => isPubliclyVisible(item)).map(item => {
+    if (item.listingType !== 'AUCTION') return item
+    const top = Math.max(item.highestBid ?? 0, ...bids.filter(bid => bid.listingId === item.id).map(bid => bid.amount))
+    return top > 0 ? { ...item, highestBid: top } : item
+  }), [listings, bids])
   return (
     <Routes>
+      <Route path="/farmer/*" element={<FarmerApp listings={listings} setListings={setListings} orders={orders} setOrders={setOrders} bids={bids} />} />
       <Route path="/login" element={buyer ? <Navigate to="/" replace /> : <AuthPage onAuth={setBuyer} />} />
       <Route path="/register" element={buyer ? <Navigate to="/" replace /> : <AuthPage register onAuth={setBuyer} />} />
       <Route element={buyer ? <MarketplaceLayout buyer={buyer} onLogout={() => setBuyer(null)} /> : <Navigate to="/login" replace />}>
-        <Route index element={<Dashboard buyer={buyer} listings={listings} orders={orders} bids={bids} />} />
-        <Route path="browse" element={<BrowsePage listings={listings} />} />
-        <Route path="listings/:id" element={<ListingDetail listings={listings} setOrders={setOrders} bids={bids} setBids={setBids} />} />
+        <Route index element={<Dashboard buyer={buyer} listings={marketListings} orders={orders} bids={bids} />} />
+        <Route path="browse" element={<BrowsePage listings={marketListings} />} />
+        <Route path="listings/:id" element={<ListingDetail buyer={buyer} listings={marketListings} setOrders={setOrders} bids={bids} setBids={setBids} />} />
         <Route path="orders" element={<OrdersPage orders={orders} setOrders={setOrders} listings={listings} bids={bids} />} />
         <Route path="profile" element={<ProfilePage buyer={buyer} setBuyer={setBuyer} />} />
         <Route path="*" element={<Navigate to="/" replace />} />
@@ -178,14 +99,11 @@ function AuthPage({ register = false, onAuth }: { register?: boolean; onAuth: (b
           </form>
           <p className="auth-switch">{register ? 'Already have an account?' : 'New to AgriRevive?'} <Link to={register ? '/login' : '/register'}>{register ? 'Sign in' : 'Create an account'}</Link></p>
           <p className="demo-note"><ShieldCheck size={14} /> Demo account is stored locally in this browser.</p>
+          <p className="auth-switch auth-role-switch">Selling biomass? <Link to="/farmer/login">Farmer sign in</Link></p>
         </section>
       </div>
     </main>
   )
-}
-
-function Brand() {
-  return <Link to="/" className="brand"><span className="brand-mark"><Leaf size={20} fill="currentColor" /></span><span>agri<span>revive</span></span></Link>
 }
 
 function MarketplaceLayout({ buyer, onLogout }: { buyer: Buyer | null; onLogout: () => void }) {
@@ -239,7 +157,7 @@ function NavItem({ to, icon, label, end, count }: { to: string; icon: ReactNode;
 }
 
 function Dashboard({ buyer, listings, orders, bids }: { buyer: Buyer | null; listings: Listing[]; orders: BuyerOrder[]; bids: BidRecord[] }) {
-  const activeOrders = orders.filter(order => order.status !== 'DELIVERED').length
+  const activeOrders = orders.filter(order => order.status !== 'DELIVERED' && order.status !== 'REJECTED').length
   const totalTonnes = orders.reduce((sum, order) => sum + order.quantity, 0)
   const auctions = listings.filter(listing => listing.listingType === 'AUCTION')
   const firstName = buyer?.name.trim().split(/\s+/)[0] || 'there'
@@ -350,7 +268,7 @@ function ListingCard({ listing }: { listing: Listing }) {
   </article>
 }
 
-function ListingDetail({ listings, setOrders, bids, setBids }: { listings: Listing[]; setOrders: (orders: BuyerOrder[] | ((old: BuyerOrder[]) => BuyerOrder[])) => void; bids: BidRecord[]; setBids: (bids: BidRecord[] | ((old: BidRecord[]) => BidRecord[])) => void }) {
+function ListingDetail({ buyer, listings, setOrders, bids, setBids }: { buyer: Buyer | null; listings: Listing[]; setOrders: (orders: BuyerOrder[] | ((old: BuyerOrder[]) => BuyerOrder[])) => void; bids: BidRecord[]; setBids: (bids: BidRecord[] | ((old: BidRecord[]) => BidRecord[])) => void }) {
   const { id = '' } = useParams()
   const listing = listings.find(item => item.id === id)
   const navigate = useNavigate()
@@ -362,7 +280,7 @@ function ListingDetail({ listings, setOrders, bids, setBids }: { listings: Listi
   const currentBid = Math.max(listing.highestBid || listing.price, ...userBids.map(item => item.amount))
   const placeOrder = (event: FormEvent) => {
     event.preventDefault()
-    const order: BuyerOrder = { id: `AR-${Date.now().toString().slice(-6)}`, listingId: id, title: listing.title, location: listing.location, quantity, total: quantity * listing.price, status: 'REQUESTED', date: new Date().toISOString() }
+    const order: BuyerOrder = { id: `AR-${Date.now().toString().slice(-6)}`, listingId: id, title: listing.title, location: listing.location, quantity, total: quantity * listing.price, status: 'REQUESTED', date: new Date().toISOString(), farmerEmail: listing.farmerEmail, buyerName: buyer?.name, buyerOrganization: buyer?.organization, source: 'PURCHASE_REQUEST' }
     setOrders(old => [order, ...old])
     navigate('/orders')
   }
@@ -373,7 +291,7 @@ function ListingDetail({ listings, setOrders, bids, setBids }: { listings: Listi
       setNotice(`Enter at least ${currency(currentBid + 50)}. Bids must be at least ₹50 above the current bid.`)
       return
     }
-    setBids(old => [{ listingId: id, amount, date: new Date().toISOString() }, ...old])
+    setBids(old => [{ listingId: id, amount, date: new Date().toISOString(), bidderName: buyer?.name, bidderOrganization: buyer?.organization }, ...old])
     setNotice('Your bid has been placed and saved in this demo workspace.')
     setBid('')
   }
@@ -389,9 +307,9 @@ function ListingDetail({ listings, setOrders, bids, setBids }: { listings: Listi
       </div>
       <aside className="purchase-card">
         {listing.listingType === 'AUCTION' ? <>
-          <div className="purchase-topline"><span className="auction-chip inline-chip"><span /> LIVE AUCTION</span><span className="ends-in">Ends Oct {listing.id === 'ag-2052' ? '06' : '08'}</span></div>
+          <div className="purchase-topline"><span className="auction-chip inline-chip"><span /> LIVE AUCTION</span><span className="ends-in">{listing.auctionEnds ? `Ends ${new Date(listing.auctionEnds).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}` : 'Ends soon'}</span></div>
           <div className="current-bid-label">CURRENT HIGHEST BID</div><div className="current-bid-value">{currency(currentBid)}<small> / tonne</small></div>
-          <div className="bid-context"><span><TrendingUp size={14} /> {listing.bidCount! + userBids.length} bids placed</span><span>{listing.quantity} t in lot</span></div>
+          <div className="bid-context"><span><TrendingUp size={14} /> {(listing.bidCount ?? 0) + userBids.length} bids placed</span><span>{listing.quantity} t in lot</span></div>
           <div className="card-rule" />
           <form onSubmit={placeBid} className="bid-form"><label htmlFor="bid-amount">Your bid <span>Min. {currency(currentBid + 50)}</span></label><div className="money-input"><span>₹</span><input id="bid-amount" type="number" min={currentBid + 50} step="1" required value={bid} onChange={e => setBid(e.target.value)} placeholder="Enter amount per tonne" /></div><button className="button button-primary button-full">Place your bid <ArrowRight size={16} /></button></form>
           {notice && <p className={`notice ${notice.startsWith('Your') ? 'notice-success' : ''}`}>{notice}</p>}
@@ -432,23 +350,23 @@ function OrdersPage({ orders, setOrders, listings, bids }: { orders: BuyerOrder[
       setPayingId(null)
     }, 350)
   }
-  const statusLabel = (status: BuyerOrder['status']) => ({ REQUESTED: 'Awaiting farmer', ACCEPTED: 'Payment due', PAID: 'Payment held', IN_TRANSIT: 'In transit', DELIVERED: 'Delivered' })[status]
+  const statusLabel = (status: OrderStatus) => ({ REQUESTED: 'Awaiting farmer', ACCEPTED: 'Payment due', PAID: 'Payment held', IN_TRANSIT: 'In transit', DELIVERED: 'Delivered', REJECTED: 'Declined' })[status]
   return <div className="content-width">
     <div className="page-heading"><div><span className="eyebrow">YOUR SOURCING ACTIVITY</span><h1>My orders</h1><p>Track purchase requests, payments and delivery in one place.</p></div>{orders.length > 0 && <Link to="/browse" className="button button-outline"><Search size={16} /> Find more biomass</Link>}</div>
-    <div className="order-summary-strip"><div><span className="order-summary-icon"><PackageCheck size={18} /></span><span><strong>{orders.length} total orders</strong><small>All sourcing activity</small></span></div><div><span className="order-summary-icon paid"><ShieldCheck size={18} /></span><span><strong>{currency(orders.filter(order => order.status !== 'REQUESTED').reduce((sum, order) => sum + order.total, 0))}</strong><small>Order value in progress</small></span></div><div><span className="order-summary-icon">{bids.length ? <TrendingUp size={18} /> : <Clock3 size={18} />}</span><span><strong>{bids.length} active bids</strong><small>Across live auctions</small></span></div></div>
+    <div className="order-summary-strip"><div><span className="order-summary-icon"><PackageCheck size={18} /></span><span><strong>{orders.length} total orders</strong><small>All sourcing activity</small></span></div><div><span className="order-summary-icon paid"><ShieldCheck size={18} /></span><span><strong>{currency(orders.filter(order => order.status !== 'REQUESTED' && order.status !== 'REJECTED').reduce((sum, order) => sum + order.total, 0))}</strong><small>Order value in progress</small></span></div><div><span className="order-summary-icon">{bids.length ? <TrendingUp size={18} /> : <Clock3 size={18} />}</span><span><strong>{bids.length} active bids</strong><small>Across live auctions</small></span></div></div>
     <div className="order-tabs">{['All orders', 'Needs attention', 'In progress & complete'].map(item => <button key={item} onClick={() => setTab(item)} className={tab === item ? 'order-tab active-tab' : 'order-tab'}>{item}<span>{item === 'All orders' ? orders.length : item === 'Needs attention' ? orders.filter(order => order.status === 'ACCEPTED').length : orders.filter(order => ['PAID', 'IN_TRANSIT', 'DELIVERED'].includes(order.status)).length}</span></button>)}</div>
-    {filtered.length ? <div className="orders-table-wrap"><table className="orders-table"><thead><tr><th>ORDER</th><th>BIOMASS</th><th>QUANTITY</th><th>ORDER VALUE</th><th>PAYMENT / STATUS</th><th>NEXT STEP</th><th /></tr></thead><tbody>{filtered.map(order => <tr key={order.id}><td><strong className="order-id">{order.id}</strong><small>{new Date(order.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</small></td><td><div className="order-product"><span className={`order-product-img ${listings.find(item => item.id === order.listingId)?.color || 'sage'}`} style={{ backgroundImage: `url("${listings.find(item => item.id === order.listingId)?.image || ''}")` }} /><span><strong>{order.title}</strong><small>{order.location}</small></span></div></td><td>{order.quantity} t</td><td><strong>{currency(order.total)}</strong><small>{order.status === 'REQUESTED' ? 'Payment not due' : order.status === 'ACCEPTED' ? 'Payment due' : order.status === 'DELIVERED' ? 'Payment released' : 'Payment held securely'}</small></td><td><StatusPill status={statusLabel(order.status)} /></td><td>{order.status === 'ACCEPTED' ? <button className="table-action" onClick={() => pay(order.id)} disabled={payingId === order.id}>{payingId === order.id ? 'Processing…' : 'Pay now'} <ArrowRight size={13} /></button> : order.status === 'REQUESTED' ? <button className="table-action" onClick={() => setOrders(old => old.map(item => item.id === order.id ? { ...item, status: 'ACCEPTED' } : item))}>Demo: simulate acceptance <ArrowRight size={13} /></button> : <span className="next-step">{order.status === 'PAID' ? 'Pickup to be scheduled' : order.status === 'IN_TRANSIT' ? 'Confirm delivery' : 'Order complete'}</span>}</td><td><Link className="icon-button row-more" to={`/listings/${order.listingId}`} aria-label={`View ${order.title} listing`} title="View listing"><ArrowUpRight size={16} /></Link></td></tr>)}</tbody></table></div> : <div className="empty-state"><span className="empty-icon large"><PackageCheck size={22} /></span><h3>{orders.length ? 'Nothing in this view' : 'Your supply story starts here'}</h3><p>{orders.length ? 'There are no orders in this category yet.' : 'When you request biomass or bid on an auction, your orders and payment status will appear here.'}</p><Link to="/browse" className="button button-primary"><Search size={16} /> Browse biomass</Link></div>}
+    {filtered.length ? <div className="orders-table-wrap"><table className="orders-table"><thead><tr><th>ORDER</th><th>BIOMASS</th><th>QUANTITY</th><th>ORDER VALUE</th><th>PAYMENT / STATUS</th><th>NEXT STEP</th><th /></tr></thead><tbody>{filtered.map(order => <tr key={order.id}><td><strong className="order-id">{order.id}</strong><small>{new Date(order.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</small></td><td><div className="order-product"><span className={`order-product-img ${listings.find(item => item.id === order.listingId)?.color || 'sage'}`} style={{ backgroundImage: `url("${listings.find(item => item.id === order.listingId)?.image || ''}")` }} /><span><strong>{order.title}</strong><small>{order.location}</small></span></div></td><td>{order.quantity} t</td><td><strong>{currency(order.total)}</strong><small>{order.status === 'REQUESTED' || order.status === 'REJECTED' ? 'Payment not due' : order.status === 'ACCEPTED' ? 'Payment due' : order.status === 'DELIVERED' ? 'Payment released' : 'Payment held securely'}</small></td><td><StatusPill status={statusLabel(order.status)} /></td><td>{order.status === 'ACCEPTED' ? <button className="table-action" onClick={() => pay(order.id)} disabled={payingId === order.id}>{payingId === order.id ? 'Processing…' : 'Pay now'} <ArrowRight size={13} /></button> : order.status === 'REJECTED' ? <span className="next-step" title={order.rejectionReason}>{order.rejectionReason ? `Farmer: ${order.rejectionReason.slice(0, 28)}${order.rejectionReason.length > 28 ? '…' : ''}` : 'Request declined'}</span> : order.status === 'REQUESTED' && order.farmerEmail ? <span className="next-step">Waiting for the farmer</span> : order.status === 'REQUESTED' ? <button className="table-action" onClick={() => setOrders(old => old.map(item => item.id === order.id ? { ...item, status: 'ACCEPTED' } : item))}>Demo: simulate acceptance <ArrowRight size={13} /></button> : <span className="next-step">{order.status === 'PAID' ? 'Pickup to be scheduled' : order.status === 'IN_TRANSIT' ? 'Confirm delivery' : 'Order complete'}</span>}</td><td><Link className="icon-button row-more" to={`/listings/${order.listingId}`} aria-label={`View ${order.title} listing`} title="View listing"><ArrowUpRight size={16} /></Link></td></tr>)}</tbody></table></div> : <div className="empty-state"><span className="empty-icon large"><PackageCheck size={22} /></span><h3>{orders.length ? 'Nothing in this view' : 'Your supply story starts here'}</h3><p>{orders.length ? 'There are no orders in this category yet.' : 'When you request biomass or bid on an auction, your orders and payment status will appear here.'}</p><Link to="/browse" className="button button-primary"><Search size={16} /> Browse biomass</Link></div>}
     <div className="payment-explainer"><span className="payment-shield"><ShieldCheck size={19} /></span><div><strong>Your payment is protected</strong><p>Payments are held securely until delivery is confirmed. You stay in control at every step.</p></div><span className="escrow-tag">BUYER PROTECTION</span></div>
   </div>
 }
 
 function StatusPill({ status }: { status: string }) {
-  const tone = status === 'Awaiting farmer' ? 'status-waiting' : status === 'Payment due' ? 'status-due' : status === 'Delivered' ? 'status-done' : 'status-progress'
+  const tone = status === 'Awaiting farmer' ? 'status-waiting' : status === 'Payment due' || status === 'Declined' ? 'status-due' : status === 'Delivered' ? 'status-done' : 'status-progress'
   return <span className={`status-pill ${tone}`}><i />{status}</span>
 }
 
 function OrderRows({ orders }: { orders: BuyerOrder[] }) {
-  return <div className="recent-rows">{orders.map(order => <div className="recent-row" key={order.id}><span className="recent-order-icon"><PackageCheck size={15} /></span><span className="recent-product"><strong>{order.title}</strong><small>{order.id} · {order.quantity} tonnes</small></span><StatusPill status={order.status === 'REQUESTED' ? 'Awaiting farmer' : order.status === 'ACCEPTED' ? 'Payment due' : order.status === 'DELIVERED' ? 'Delivered' : 'Payment held'} /><strong className="recent-value">{currency(order.total)}</strong></div>)}</div>
+  return <div className="recent-rows">{orders.map(order => <div className="recent-row" key={order.id}><span className="recent-order-icon"><PackageCheck size={15} /></span><span className="recent-product"><strong>{order.title}</strong><small>{order.id} · {order.quantity} tonnes</small></span><StatusPill status={order.status === 'REQUESTED' ? 'Awaiting farmer' : order.status === 'ACCEPTED' ? 'Payment due' : order.status === 'DELIVERED' ? 'Delivered' : order.status === 'REJECTED' ? 'Declined' : 'Payment held'} /><strong className="recent-value">{currency(order.total)}</strong></div>)}</div>
 }
 
 function ProfilePage({ buyer, setBuyer }: { buyer: Buyer | null; setBuyer: (buyer: Buyer | null) => void }) {

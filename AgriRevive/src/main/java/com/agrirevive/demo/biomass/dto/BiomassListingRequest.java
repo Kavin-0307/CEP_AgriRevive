@@ -2,6 +2,7 @@ package com.agrirevive.demo.biomass.dto;
 import lombok.Data;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 @Data
 public class BiomassListingRequest {
 	private Long residueTypeId;
@@ -15,4 +16,7 @@ public class BiomassListingRequest {
 	private String district;
 	private String pickupAddress;
 	private LocalDate availableFrom;
+	private String listingType;
+    private LocalDateTime auctionEndTime;
+
 }

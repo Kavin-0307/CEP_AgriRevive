@@ -1,11 +1,12 @@
 package com.agrirevive.demo.user;
 import lombok.*;
 import jakarta.persistence.*;
+import java.io.Serializable;
 import java.time.LocalDateTime;
 @Entity
 @Table(name="users")
 @Getter@Setter@NoArgsConstructor@AllArgsConstructor@Builder
-public class User {
+public class User implements Serializable {
 	@Id
 	@GeneratedValue(strategy=GenerationType.IDENTITY)
 	private Long id;

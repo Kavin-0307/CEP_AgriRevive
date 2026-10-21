@@ -5,20 +5,21 @@ import lombok.*;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.io.Serializable;
 
 @Entity
 @Table(name="biomass_listings")
 @Getter@Setter@NoArgsConstructor@AllArgsConstructor@Builder
-public class BiomassListing {
+public class BiomassListing implements Serializable{
 	@Id
 	@GeneratedValue(strategy=GenerationType.IDENTITY)
 	private Long id;
-	@ManyToOne(fetch=FetchType.LAZY)
+	@ManyToOne(fetch=FetchType.EAGER)
 	@JoinColumn(name="farmer_id")
 	private User farmer;
 	
-	@ManyToOne(fetch=FetchType.LAZY)
-	@JoinColumn(name="farmer_id")
+	@ManyToOne(fetch=FetchType.EAGER)
+	@JoinColumn(name="residue_type_id")
 	private ResidueType residueType;
 	
 	private String title,description;
@@ -29,7 +30,7 @@ public class BiomassListing {
 	private BigDecimal pricePerTonne;
 	@Column(name="quality_grade")
 	private String qualityGrade;
-	@Column(name="moiture_percent")
+	@Column(name="moisture_percent")
 	private BigDecimal moisturePercent;
 	private String state,district;
 	@Column(name="pickup_address")

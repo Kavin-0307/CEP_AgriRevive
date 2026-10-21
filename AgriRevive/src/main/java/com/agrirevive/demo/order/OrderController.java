@@ -30,4 +30,9 @@ public class OrderController {
  public List<Order> getMyOrders(Authentication auth) {
      return orderService.getMyOrders(auth.getName());
  }
+ @PatchMapping("/{id}/status")
+ @PreAuthorize("isAuthenticated()")
+ public Order updateOrderStatus(@PathVariable Long id,@RequestParam String status,Authentication auth) {
+	 return orderService.updateOrderStatus(id, status, auth.getName());
+ }
 }

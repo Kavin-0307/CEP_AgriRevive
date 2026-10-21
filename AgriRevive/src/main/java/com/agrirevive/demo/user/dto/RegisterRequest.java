@@ -15,4 +15,6 @@ public class RegisterRequest {
 	@NotNull private Role role;
 	private String organizationName;
 	private String phone;
+	private String state;
+	private String district;
 }

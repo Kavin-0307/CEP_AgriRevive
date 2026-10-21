@@ -36,4 +36,4 @@ app:
   jwt:
     
     secret: 4KYQDrqkdI4WhZ+59TQavg4ySySUM3uohcx0ZHvml/Y=
-    expiration-ms: 86400000
+    expirations: 86400000

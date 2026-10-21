@@ -2,6 +2,7 @@ package com.agrirevive.demo.biomass;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.cache.annotation.CacheEvict;
 
 @Service
 public class AiVerificationService {
@@ -11,6 +12,7 @@ public class AiVerificationService {
 	}
 	@Async
 	@Transactional
+	@CacheEvict(value="activeListings",allEntries=true)
 	public void verifyListing(Long listingId) {
 		try {
 			Thread.sleep(3000);

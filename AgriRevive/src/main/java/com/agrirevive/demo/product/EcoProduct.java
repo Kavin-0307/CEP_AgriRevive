@@ -6,7 +6,7 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name="edo_products")
+@Table(name="eco_products")
 @Getter@Setter@NoArgsConstructor@AllArgsConstructor@Builder
 public class EcoProduct {
 	@Id

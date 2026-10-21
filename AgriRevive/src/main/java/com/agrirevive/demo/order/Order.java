@@ -5,7 +5,7 @@ import lombok.*;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-
+import java.io.Serializable;
 @Entity
 @Table(name="orders")
 @Getter@Setter@NoArgsConstructor@AllArgsConstructor@Builder
@@ -17,11 +17,11 @@ public class Order {
 	@Column(name="order_type")
 	private String orderType;
 	
-	@ManyToOne(fetch=FetchType.LAZY)
+	@ManyToOne(fetch=FetchType.EAGER)
 	@JoinColumn(name="seller_id")
 	private User seller;
 	
-	@ManyToOne(fetch=FetchType.LAZY)
+	@ManyToOne(fetch=FetchType.EAGER)
 	@JoinColumn(name="buyer_id")
 	private User buyer;
 	

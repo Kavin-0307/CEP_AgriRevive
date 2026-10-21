@@ -5,6 +5,8 @@ import { currency, type BuyerOrder, type OrderStatus } from '../shared'
 import { useFarmer } from './context'
 import { formatDay, toDateInput } from './helpers'
 
+import api from '../api'
+
 const STATUS: Record<OrderStatus, { label: string; tone: string }> = {
   REQUESTED: { label: 'New request', tone: 'status-due' },
   ACCEPTED: { label: 'Awaiting payment', tone: 'status-waiting' },
@@ -23,7 +25,7 @@ const inProgress = (order: BuyerOrder) => order.status === 'ACCEPTED' || order.s
 const completed = (order: BuyerOrder) => order.status === 'DELIVERED' || order.status === 'REJECTED'
 
 export default function FarmerOrders() {
-  const { orders, setOrders, allListings, setListings } = useFarmer()
+  const { orders, setOrders, allListings } = useFarmer()
   const [tab, setTab] = useState<Tab>('All orders')
   const [dialog, setDialog] = useState<Dialog>(null)
   const [notice, setNotice] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null)
@@ -40,37 +42,46 @@ export default function FarmerOrders() {
 
   const patch = (id: string, changes: Partial<BuyerOrder>) => setOrders(old => old.map(order => order.id === id ? { ...order, ...changes } : order))
 
-  const accept = (order: BuyerOrder) => {
+  const accept = async (order: BuyerOrder) => {
     const listing = allListings.find(item => item.id === order.listingId)
     if (!listing) { setNotice({ tone: 'error', text: 'The listing for this request no longer exists, so it can only be declined.' }); return }
-    if (order.quantity > listing.quantity) { setNotice({ tone: 'error', text: `You only have ${listing.quantity} t of “${listing.title}” left, but this request is for ${order.quantity} t. Edit the listing or decline the request.` }); return }
-    const remaining = Math.round((listing.quantity - order.quantity) * 100) / 100
-    setListings(old => old.map(item => item.id === listing.id ? { ...item, quantity: remaining, status: remaining <= 0 ? 'SOLD_OUT' : item.status } : item))
-    patch(order.id, { status: 'ACCEPTED' })
-    setNotice({ tone: 'ok', text: `Request ${order.id} accepted. ${order.quantity} t is reserved and the buyer can now pay.` })
+    try {
+      await api.patch(`/orders/${order.id}/status?status=ACCEPTED`)
+      patch(order.id, { status: 'ACCEPTED' })
+      setNotice({ tone: 'ok', text: `Request ${order.id} accepted. The buyer can now pay.` })
+    } catch {
+      setNotice({ tone: 'error', text: 'Could not update order status on the server.' })
+    }
   }
 
   const openDialog = (kind: 'decline' | 'pickup' | 'deliver', order: BuyerOrder) => {
     setDialog({ kind, order }); setFormError(''); setReason(''); setNotes(''); setVehicle(''); setPickupDate(toDateInput(new Date()))
   }
 
-  const submitDialog = (event: FormEvent) => {
+  const submitDialog = async (event: FormEvent) => {
     event.preventDefault()
     if (!dialog) return
     const { kind, order } = dialog
-    if (kind === 'decline') {
-      if (reason.trim().length < 3) { setFormError('Please tell the buyer why you are declining.'); return }
-      patch(order.id, { status: 'REJECTED', rejectionReason: reason.trim() })
-      setNotice({ tone: 'ok', text: `Request ${order.id} was declined.` })
-    } else if (kind === 'pickup') {
-      if (!pickupDate) { setFormError('Choose a pickup date.'); return }
-      patch(order.id, { status: 'IN_TRANSIT', pickupDate, vehicleNumber: vehicle.trim().toUpperCase() || undefined, pickupNotes: notes.trim() || undefined })
-      setNotice({ tone: 'ok', text: `Pickup scheduled for ${order.id}. The order is now in transit.` })
-    } else {
-      patch(order.id, { status: 'DELIVERED', deliveryRemarks: notes.trim() || undefined })
-      setNotice({ tone: 'ok', text: `Order ${order.id} marked as delivered.` })
+    try {
+      if (kind === 'decline') {
+        if (reason.trim().length < 3) { setFormError('Please tell the buyer why you are declining.'); return }
+        await api.patch(`/orders/${order.id}/status?status=REJECTED`)
+        patch(order.id, { status: 'REJECTED', rejectionReason: reason.trim() })
+        setNotice({ tone: 'ok', text: `Request ${order.id} was declined.` })
+      } else if (kind === 'pickup') {
+        if (!pickupDate) { setFormError('Choose a pickup date.'); return }
+        await api.patch(`/orders/${order.id}/status?status=IN_TRANSIT`)
+        patch(order.id, { status: 'IN_TRANSIT', pickupDate, vehicleNumber: vehicle.trim().toUpperCase() || undefined, pickupNotes: notes.trim() || undefined })
+        setNotice({ tone: 'ok', text: `Pickup scheduled for ${order.id}. The order is now in transit.` })
+      } else {
+        await api.patch(`/orders/${order.id}/status?status=DELIVERED`)
+        patch(order.id, { status: 'DELIVERED', deliveryRemarks: notes.trim() || undefined })
+        setNotice({ tone: 'ok', text: `Order ${order.id} marked as delivered.` })
+      }
+      setDialog(null)
+    } catch {
+      setFormError('Failed to update status on the backend.')
     }
-    setDialog(null)
   }
 
   return (

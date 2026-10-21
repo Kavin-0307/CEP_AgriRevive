@@ -6,31 +6,40 @@ import {
 } from 'lucide-react'
 import {
   Link, Navigate, NavLink, Route, Routes, useLocation, useNavigate, useParams,
-  useSearchParams,
+  useSearchParams,Outlet as RoutesOutlet
 } from 'react-router-dom'
 import {
-  Brand, currency, initialListings, isPubliclyVisible, readStored, useStoredState,
+  Brand, currency, isPubliclyVisible, useStoredState,
   type BidRecord, type Buyer, type BuyerOrder, type Listing, type OrderStatus,
 } from './shared'
-import FarmerApp from './farmer/FarmerApp'
+import api, { mapBackendListingToFrontend ,mapOrder} from './api'
 
+import FarmerApp from './farmer/FarmerApp'
 export default function App() {
   const [buyer, setBuyer] = useStoredState<Buyer | null>('agri-buyer', null)
-  const [listings, setListings] = useStoredState<Listing[]>('agri-listings', initialListings)
+  const [listings, setListings] = useState<Listing[]>([]) // <--- Using real state now
   const [orders, setOrders] = useStoredState<BuyerOrder[]>('agri-orders', [])
   const [bids, setBids] = useStoredState<BidRecord[]>('agri-bids', [])
-  // Buyers only see listings that are live; paused, under-review, sold and ended farmer auctions are hidden.
+
+  // THIS IS NEW: Fetch data from Spring Boot on startup!
+  useEffect(()=>{
+    if(buyer||localStorage.getItem('token')){
+      api.get('/biomass').then(response=>setListings(response.data.map(mapBackendListingToFrontend))).catch(err=>console.error(err));
+      api.get('/orders/mine').then(response=>setOrders(response.data.map(mapOrder))).catch(err=>console.error(err));
+    }
+  },[buyer])
   const marketListings = useMemo(() => listings.filter(item => isPubliclyVisible(item)).map(item => {
     if (item.listingType !== 'AUCTION') return item
     const top = Math.max(item.highestBid ?? 0, ...bids.filter(bid => bid.listingId === item.id).map(bid => bid.amount))
     return top > 0 ? { ...item, highestBid: top } : item
   }), [listings, bids])
+  
   return (
     <Routes>
       <Route path="/farmer/*" element={<FarmerApp listings={listings} setListings={setListings} orders={orders} setOrders={setOrders} bids={bids} />} />
       <Route path="/login" element={buyer ? <Navigate to="/" replace /> : <AuthPage onAuth={setBuyer} />} />
       <Route path="/register" element={buyer ? <Navigate to="/" replace /> : <AuthPage register onAuth={setBuyer} />} />
-      <Route element={buyer ? <MarketplaceLayout buyer={buyer} onLogout={() => setBuyer(null)} /> : <Navigate to="/login" replace />}>
+      <Route element={buyer ? <MarketplaceLayout buyer={buyer} onLogout={() => { setBuyer(null); localStorage.removeItem('token'); }} /> : <Navigate to="/login" replace />}>
         <Route index element={<Dashboard buyer={buyer} listings={marketListings} orders={orders} bids={bids} />} />
         <Route path="browse" element={<BrowsePage listings={marketListings} />} />
         <Route path="listings/:id" element={<ListingDetail buyer={buyer} listings={marketListings} setOrders={setOrders} bids={bids} setBids={setBids} />} />
@@ -49,9 +58,11 @@ function AuthPage({ register = false, onAuth }: { register?: boolean; onAuth: (b
   const [organization, setOrganization] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
-  const submit = (event: FormEvent) => {
+  
+  const submit = async (event: FormEvent) => {
     event.preventDefault()
-    if (!email.includes('@') || password.length < 6) {
+    const key = email.trim().toLowerCase()
+    if (!key.includes('@') || password.length < 6) {
       setError('Enter a valid email and a password with at least 6 characters.')
       return
     }
@@ -59,46 +70,66 @@ function AuthPage({ register = false, onAuth }: { register?: boolean; onAuth: (b
       setError('Add your name and organization to create a buyer account.')
       return
     }
-    const stored = readStored<Buyer | null>('agri-buyer-profile', null)
-    const buyer: Buyer = register
-      ? { name: name.trim(), email, organization: organization.trim(), phone: '', state: '' }
-      : stored?.email === email
-        ? stored
-        : { name: email.split('@')[0].replace(/[._-]/g, ' '), email, organization: 'Industry buyer', phone: '', state: '' }
-    localStorage.setItem('agri-buyer-profile', JSON.stringify(buyer))
-    onAuth(buyer)
-    navigate('/')
+    
+    try {
+        let buyerData: Buyer;
+        if (register) {
+            const response = await api.post('/auth/register', {
+                name: name.trim(), 
+                email: key, 
+                password, 
+                phone: '0000000000', 
+                organizationName: organization.trim(),
+                role: 'INDUSTRY' 
+            });
+            localStorage.setItem('token', response.data.token);
+            const u = response.data.user || {};
+            buyerData = { name: u.name || name.trim(), email: u.email || key, organization: u.organizationName || organization.trim(), phone: u.phone || '', state: u.state || '' };
+        } else {
+            const response = await api.post('/auth/login', { email: key, password });
+            localStorage.setItem('token', response.data.token);
+            const u = response.data.user || {};
+            buyerData = { name: u.name || 'Buyer', email: u.email || key, organization: u.organizationName || 'Industry buyer', phone: u.phone || '', state: u.state || '' };
+        }
+        
+        localStorage.setItem('agri-buyer-profile', JSON.stringify(buyerData));
+        onAuth(buyerData);
+        navigate('/');
+        
+    } catch (err: any) {
+        setError(err?.response?.data?.message || 'Invalid credentials or server error. Make sure your Spring Boot backend is running!');
+    }
   }
+
   return (
     <main className="auth-page">
-      <div className="auth-brand"><Brand /></div>
+      <div className="auth-brand"><Brand to="/" /></div>
       <div className="auth-layout">
         <section className="auth-story">
-          <span className="eyebrow light"><Sprout size={15} /> A better way to source</span>
-          <h1>Good for your business.<br /><em>Better for the earth.</em></h1>
-          <p>Build a resilient supply chain with quality-verified agricultural biomass, sourced directly from farming communities.</p>
-          <div className="auth-proof"><span><strong>1,200+</strong> verified suppliers</span><span><strong>18</strong> states covered</span></div>
-          <div className="story-orbit orbit-one" /><div className="story-orbit orbit-two" />
+          <span className="eyebrow light"><ShieldCheck size={15} /> Reliable Biomass Supply</span>
+          <h1>Source raw materials<br /><em>with confidence.</em></h1>
+          <p>AgriRevive connects industry buyers directly with verified farmers to source sustainable agricultural residue.</p>
+          <div className="auth-proof"><span><strong>Traceable</strong> supply chain</span><span><strong>Direct</strong> from farmers</span></div>
         </section>
         <section className="auth-card">
           <div className="auth-card-heading">
-            <span className="eyebrow">INDUSTRY BUYER PORTAL</span>
-            <h2>{register ? 'Create your account' : 'Welcome back'}</h2>
-            <p>{register ? 'Join a more circular supply chain.' : 'Sign in to your AgriRevive workspace.'}</p>
+            <span className="eyebrow">BUYER PORTAL</span>
+            <h2>{register ? 'Create a buyer account' : 'Welcome back'}</h2>
+            <p>{register ? 'Join the network of industries sourcing sustainable biomass.' : 'Sign in to manage your biomass supply chain.'}</p>
           </div>
           <form onSubmit={submit} className="stack-form">
-            {register && <>
-              <label>Full name<input required value={name} onChange={e => setName(e.target.value)} placeholder="Your name" autoComplete="name" /></label>
-              <label>Organization<input required value={organization} onChange={e => setOrganization(e.target.value)} placeholder="Company or organization" /></label>
-            </>}
-            <label>Work email<input type="email" required value={email} onChange={e => setEmail(e.target.value)} placeholder="you@company.com" autoComplete="email" /></label>
-            <label>Password<input type="password" required minLength={6} value={password} onChange={e => setPassword(e.target.value)} placeholder="At least 6 characters" autoComplete={register ? 'new-password' : 'current-password'} /></label>
+            {register && (
+              <>
+                <label>Full name<input required value={name} onChange={e => setName(e.target.value)} /></label>
+                <label>Organization<input required value={organization} onChange={e => setOrganization(e.target.value)} /></label>
+              </>
+            )}
+            <label>Email<input type="email" required value={email} onChange={e => setEmail(e.target.value)} /></label>
+            <label>Password<input type="password" required minLength={6} value={password} onChange={e => setPassword(e.target.value)} /></label>
             {error && <p className="form-error">{error}</p>}
-            {!register && <div className="form-meta"><label className="check-label"><input type="checkbox" /> Remember me</label><button type="button" className="text-button" onClick={() => setError('For this demo, use any valid email and a password with 6+ characters.')}>Forgot password?</button></div>}
-            <button className="button button-primary button-full" type="submit">{register ? 'Create buyer account' : 'Sign in'} <ArrowRight size={17} /></button>
+            <button className="button button-primary button-full">{register ? 'Create account' : 'Sign in'} <ArrowRight size={16} /></button>
           </form>
           <p className="auth-switch">{register ? 'Already have an account?' : 'New to AgriRevive?'} <Link to={register ? '/login' : '/register'}>{register ? 'Sign in' : 'Create an account'}</Link></p>
-          <p className="demo-note"><ShieldCheck size={14} /> Demo account is stored locally in this browser.</p>
           <p className="auth-switch auth-role-switch">Selling biomass? <Link to="/farmer/login">Farmer sign in</Link></p>
         </section>
       </div>
@@ -142,7 +173,6 @@ function MarketplaceLayout({ buyer, onLogout }: { buyer: Buyer | null; onLogout:
   )
 }
 
-import { Outlet as RoutesOutlet } from 'react-router-dom'
 
 function pageTitle(path: string) {
   if (path.startsWith('/browse')) return 'Browse biomass'
@@ -262,7 +292,7 @@ function ListingCard({ listing }: { listing: Listing }) {
     <div className="listing-card-body">
       <div className="listing-type">{listing.type.toUpperCase()} <span>·</span> {listing.moisture}% MOISTURE</div>
       <Link to={`/listings/${listing.id}`} className="listing-title">{listing.title}</Link>
-      <div className="listing-meta"><span><strong>{listing.quantity} t</strong> available</span><span className="meta-divider" /><span>Ready {listing.available.split(',')[0]}</span></div>
+      <div className="listing-meta"><span><strong>{listing.quantity} t</strong> available</span><span className="meta-divider" /><span>Ready {(listing.available || 'now').split(',')[0]}</span></div>
       <div className="listing-card-footer"><div><strong>{currency(listing.listingType === 'AUCTION' ? listing.highestBid || listing.price : listing.price)}</strong><small>{listing.listingType === 'AUCTION' ? 'current bid' : 'per tonne'}</small></div><Link to={`/listings/${listing.id}`} className="round-arrow" aria-label={`View ${listing.title}`}><ArrowUpRight size={17} /></Link></div>
     </div>
   </article>
@@ -272,17 +302,37 @@ function ListingDetail({ buyer, listings, setOrders, bids, setBids }: { buyer: B
   const { id = '' } = useParams()
   const listing = listings.find(item => item.id === id)
   const navigate = useNavigate()
-  const [quantity, setQuantity] = useState(5)
+  const [quantity, setQuantity] = useState(1)
   const [bid, setBid] = useState('')
   const [notice, setNotice] = useState('')
   const userBids = bids.filter(item => item.listingId === id).sort((a, b) => b.date.localeCompare(a.date))
   if (!listing) return <div className="empty-state"><h3>Listing not found</h3><Link to="/browse" className="button button-outline">Back to browse</Link></div>
   const currentBid = Math.max(listing.highestBid || listing.price, ...userBids.map(item => item.amount))
-  const placeOrder = (event: FormEvent) => {
+  const placeOrder = async (event: FormEvent) => {
     event.preventDefault()
-    const order: BuyerOrder = { id: `AR-${Date.now().toString().slice(-6)}`, listingId: id, title: listing.title, location: listing.location, quantity, total: quantity * listing.price, status: 'REQUESTED', date: new Date().toISOString(), farmerEmail: listing.farmerEmail, buyerName: buyer?.name, buyerOrganization: buyer?.organization, source: 'PURCHASE_REQUEST' }
-    setOrders(old => [order, ...old])
-    navigate('/orders')
+    try {
+      const res = await api.post('/orders/biomass', {
+        listingId: Number(id),
+        quantity,
+        offeredPrice: listing.price,
+        deliveryAddress: buyer?.organization || buyer?.state || 'Buyer Facility',
+        buyerNote: `Order for ${listing.title}`
+      })
+      const saved = mapOrder(res.data)
+      const order: BuyerOrder = {
+        ...saved,
+        title: listing.title,
+        location: listing.location,
+        farmerEmail: listing.farmerEmail || saved.farmerEmail,
+        buyerName: buyer?.name || saved.buyerName,
+        buyerOrganization: buyer?.organization || saved.buyerOrganization,
+        source: 'PURCHASE_REQUEST'
+      }
+      setOrders(old => [order, ...old])
+      navigate('/orders')
+    } catch (err: any) {
+      setNotice(err?.response?.data?.message || 'Could not place order. Please check available quantity and try again.')
+    }
   }
   const placeBid = (event: FormEvent) => {
     event.preventDefault()
@@ -339,27 +389,33 @@ function Fact({ icon, label, value }: { icon: ReactNode; label: string; value: s
   return <div className="fact"><span className="fact-icon">{icon}</span><span><small>{label}</small><strong>{value}</strong></span></div>
 }
 
-function OrdersPage({ orders, setOrders, listings, bids }: { orders: BuyerOrder[]; setOrders: (orders: BuyerOrder[] | ((old: BuyerOrder[]) => BuyerOrder[])) => void; listings: Listing[]; bids: BidRecord[] }) {
+function OrdersPage({ orders, setOrders, listings, bids }: { orders: BuyerOrder[]; setOrders: any; listings: Listing[]; bids: BidRecord[] }) {
   const [tab, setTab] = useState('All orders')
   const [payingId, setPayingId] = useState<string | null>(null)
+  
   const filtered = orders.filter(order => tab === 'All orders' || (tab === 'Needs attention' ? order.status === 'ACCEPTED' : order.status === 'PAID' || order.status === 'IN_TRANSIT' || order.status === 'DELIVERED'))
-  const pay = (id: string) => {
-    setPayingId(id)
-    window.setTimeout(() => {
-      setOrders(old => old.map(order => order.id === id ? { ...order, status: 'PAID' } : order))
-      setPayingId(null)
-    }, 350)
+  
+  const updateStatus = async (id: string, newStatus: string) => {
+    setPayingId(id);
+    try {
+        await api.patch(`/orders/${id}/status?status=${newStatus}`);
+        setOrders((old: BuyerOrder[]) => old.map(order => order.id === id ? { ...order, status: newStatus as any } : order));
+    } catch(err) {
+        alert("Failed to update status.");
+    }
+    setPayingId(null);
   }
+
   const statusLabel = (status: OrderStatus) => ({ REQUESTED: 'Awaiting farmer', ACCEPTED: 'Payment due', PAID: 'Payment held', IN_TRANSIT: 'In transit', DELIVERED: 'Delivered', REJECTED: 'Declined' })[status]
+
   return <div className="content-width">
     <div className="page-heading"><div><span className="eyebrow">YOUR SOURCING ACTIVITY</span><h1>My orders</h1><p>Track purchase requests, payments and delivery in one place.</p></div>{orders.length > 0 && <Link to="/browse" className="button button-outline"><Search size={16} /> Find more biomass</Link>}</div>
     <div className="order-summary-strip"><div><span className="order-summary-icon"><PackageCheck size={18} /></span><span><strong>{orders.length} total orders</strong><small>All sourcing activity</small></span></div><div><span className="order-summary-icon paid"><ShieldCheck size={18} /></span><span><strong>{currency(orders.filter(order => order.status !== 'REQUESTED' && order.status !== 'REJECTED').reduce((sum, order) => sum + order.total, 0))}</strong><small>Order value in progress</small></span></div><div><span className="order-summary-icon">{bids.length ? <TrendingUp size={18} /> : <Clock3 size={18} />}</span><span><strong>{bids.length} active bids</strong><small>Across live auctions</small></span></div></div>
     <div className="order-tabs">{['All orders', 'Needs attention', 'In progress & complete'].map(item => <button key={item} onClick={() => setTab(item)} className={tab === item ? 'order-tab active-tab' : 'order-tab'}>{item}<span>{item === 'All orders' ? orders.length : item === 'Needs attention' ? orders.filter(order => order.status === 'ACCEPTED').length : orders.filter(order => ['PAID', 'IN_TRANSIT', 'DELIVERED'].includes(order.status)).length}</span></button>)}</div>
-    {filtered.length ? <div className="orders-table-wrap"><table className="orders-table"><thead><tr><th>ORDER</th><th>BIOMASS</th><th>QUANTITY</th><th>ORDER VALUE</th><th>PAYMENT / STATUS</th><th>NEXT STEP</th><th /></tr></thead><tbody>{filtered.map(order => <tr key={order.id}><td><strong className="order-id">{order.id}</strong><small>{new Date(order.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</small></td><td><div className="order-product"><span className={`order-product-img ${listings.find(item => item.id === order.listingId)?.color || 'sage'}`} style={{ backgroundImage: `url("${listings.find(item => item.id === order.listingId)?.image || ''}")` }} /><span><strong>{order.title}</strong><small>{order.location}</small></span></div></td><td>{order.quantity} t</td><td><strong>{currency(order.total)}</strong><small>{order.status === 'REQUESTED' || order.status === 'REJECTED' ? 'Payment not due' : order.status === 'ACCEPTED' ? 'Payment due' : order.status === 'DELIVERED' ? 'Payment released' : 'Payment held securely'}</small></td><td><StatusPill status={statusLabel(order.status)} /></td><td>{order.status === 'ACCEPTED' ? <button className="table-action" onClick={() => pay(order.id)} disabled={payingId === order.id}>{payingId === order.id ? 'Processing…' : 'Pay now'} <ArrowRight size={13} /></button> : order.status === 'REJECTED' ? <span className="next-step" title={order.rejectionReason}>{order.rejectionReason ? `Farmer: ${order.rejectionReason.slice(0, 28)}${order.rejectionReason.length > 28 ? '…' : ''}` : 'Request declined'}</span> : order.status === 'REQUESTED' && order.farmerEmail ? <span className="next-step">Waiting for the farmer</span> : order.status === 'REQUESTED' ? <button className="table-action" onClick={() => setOrders(old => old.map(item => item.id === order.id ? { ...item, status: 'ACCEPTED' } : item))}>Demo: simulate acceptance <ArrowRight size={13} /></button> : <span className="next-step">{order.status === 'PAID' ? 'Pickup to be scheduled' : order.status === 'IN_TRANSIT' ? 'Confirm delivery' : 'Order complete'}</span>}</td><td><Link className="icon-button row-more" to={`/listings/${order.listingId}`} aria-label={`View ${order.title} listing`} title="View listing"><ArrowUpRight size={16} /></Link></td></tr>)}</tbody></table></div> : <div className="empty-state"><span className="empty-icon large"><PackageCheck size={22} /></span><h3>{orders.length ? 'Nothing in this view' : 'Your supply story starts here'}</h3><p>{orders.length ? 'There are no orders in this category yet.' : 'When you request biomass or bid on an auction, your orders and payment status will appear here.'}</p><Link to="/browse" className="button button-primary"><Search size={16} /> Browse biomass</Link></div>}
+    {filtered.length ? <div className="orders-table-wrap"><table className="orders-table"><thead><tr><th>ORDER</th><th>BIOMASS</th><th>QUANTITY</th><th>ORDER VALUE</th><th>PAYMENT / STATUS</th><th>NEXT STEP</th><th /></tr></thead><tbody>{filtered.map(order => <tr key={order.id}><td><strong className="order-id">{order.id}</strong><small>{new Date(order.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</small></td><td><div className="order-product"><span className={`order-product-img ${listings.find(item => item.id === order.listingId)?.color || 'sage'}`} style={{ backgroundImage: `url("${listings.find(item => item.id === order.listingId)?.image || ''}")` }} /><span><strong>{order.title}</strong><small>{order.location}</small></span></div></td><td>{order.quantity} t</td><td><strong>{currency(order.total)}</strong><small>{order.status === 'REQUESTED' || order.status === 'REJECTED' ? 'Payment not due' : order.status === 'ACCEPTED' ? 'Payment due' : order.status === 'DELIVERED' ? 'Payment released' : 'Payment held securely'}</small></td><td><StatusPill status={statusLabel(order.status)} /></td><td>{order.status === 'ACCEPTED' ? <button className="table-action" onClick={() => updateStatus(order.id, 'PAID')} disabled={payingId === order.id}>{payingId === order.id ? 'Processing…' : 'Pay now'} <ArrowRight size={13} /></button> : order.status === 'REJECTED' ? <span className="next-step" title={order.rejectionReason}>{order.rejectionReason ? `Farmer: ${order.rejectionReason.slice(0, 28)}${order.rejectionReason.length > 28 ? '…' : ''}` : 'Request declined'}</span> : order.status === 'REQUESTED' && order.farmerEmail ? <span className="next-step">Waiting for the farmer</span> : order.status === 'REQUESTED' ? <button className="table-action" onClick={() => updateStatus(order.id, 'ACCEPTED')}>Demo: simulate acceptance <ArrowRight size={13} /></button> : <span className="next-step">{order.status === 'PAID' ? 'Pickup to be scheduled' : order.status === 'IN_TRANSIT' ? 'Confirm delivery' : 'Order complete'}</span>}</td><td><Link className="icon-button row-more" to={`/listings/${order.listingId}`} aria-label={`View ${order.title} listing`} title="View listing"><ArrowUpRight size={16} /></Link></td></tr>)}</tbody></table></div> : <div className="empty-state"><span className="empty-icon large"><PackageCheck size={22} /></span><h3>{orders.length ? 'Nothing in this view' : 'Your supply story starts here'}</h3><p>{orders.length ? 'There are no orders in this category yet.' : 'When you request biomass or bid on an auction, your orders and payment status will appear here.'}</p><Link to="/browse" className="button button-primary"><Search size={16} /> Browse biomass</Link></div>}
     <div className="payment-explainer"><span className="payment-shield"><ShieldCheck size={19} /></span><div><strong>Your payment is protected</strong><p>Payments are held securely until delivery is confirmed. You stay in control at every step.</p></div><span className="escrow-tag">BUYER PROTECTION</span></div>
   </div>
 }
-
 function StatusPill({ status }: { status: string }) {
   const tone = status === 'Awaiting farmer' ? 'status-waiting' : status === 'Payment due' || status === 'Declined' ? 'status-due' : status === 'Delivered' ? 'status-done' : 'status-progress'
   return <span className={`status-pill ${tone}`}><i />{status}</span>

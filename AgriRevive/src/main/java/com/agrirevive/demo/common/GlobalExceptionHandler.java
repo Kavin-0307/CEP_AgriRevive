@@ -25,6 +25,10 @@ public class GlobalExceptionHandler {
 	        }
 	        return buildError(HttpStatus.BAD_REQUEST,"Validation failed",req.getRequestURI(),errors);
 	    }
+	 @ExceptionHandler(ResourceNotFoundException.class)
+	 public ResponseEntity<ApiError> handleNotFound(ResourceNotFoundException ex, HttpServletRequest req) {
+	     return buildError(HttpStatus.NOT_FOUND, ex.getMessage(), req.getRequestURI(), null);
+	 }
 	private ResponseEntity<ApiError> buildError(HttpStatus status,String msg,String path,Map<String,String> fields){
 		ApiError error=new ApiError(LocalDateTime.now(),status.value(),status.getReasonPhrase(),msg,path,fields);
 		return new ResponseEntity<>(error,status);

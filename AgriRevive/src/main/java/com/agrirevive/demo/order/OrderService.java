@@ -20,9 +20,9 @@ public class OrderService {
 	private final UserRepository userRepository;
 	private final EcoProductRepository productRepository;
 	private final BiomassListingRepository biomassRepository;
-	private final KafkaTemplate<String,Object> kafkaTemplate;
+	private final KafkaTemplate<Object,Object> kafkaTemplate;
 	public OrderService(OrderRepository orderRepository,BiomassListingRepository biomassRepository,EcoProductRepository
-			productRepository,UserRepository userRepository,KafkaTemplate<String,Object> kafkaTemplate) {
+			productRepository,UserRepository userRepository,KafkaTemplate<Object,Object> kafkaTemplate) {
 		this.orderRepository=orderRepository;
 		this.biomassRepository=biomassRepository;
 		this.productRepository=productRepository;
@@ -72,6 +72,15 @@ public class OrderService {
 	                .build();
 	        return orderRepository.save(order);
 		
+	}
+	@Transactional 
+	public Order updateOrderStatus(Long orderId,String newStatus,String userEmail) {
+		Order order=orderRepository.findById(orderId).orElseThrow(()->new ResourceNotFoundException("Order not found"));
+		User user=userRepository.findByEmail(userEmail).orElseThrow(()->new ResourceNotFoundException("User Not Found"));
+		if(!order.getBuyer().getId().equals(user.getId())&&!order.getSeller().getId().equals(user.getId()))
+			throw new BusinessRuleException("You do not have permission to update the order");
+		order.setStatus(newStatus);
+		return orderRepository.save(order);
 	}
 	public List<Order> getMyOrders(String email){
 		User user=userRepository.findByEmail(email).orElseThrow();

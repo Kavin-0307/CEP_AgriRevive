@@ -34,12 +34,14 @@ public class BiomassListingService {
 		BiomassListing listing=BiomassListing.builder().farmer(farmer).residueType(type).title(req.getTitle()).description(req.getDescription())
 				.quantityAvailable(req.getQuantityAvailable()).pricePerTonne(req.getPricePerTonne()).moisturePercent(req.getMoisturePercent())
 				.state(req.getState()).district(req.getDistrict()).pickupAddress(req.getPickupAddress()).availableFrom(req.getAvailableFrom())
+				.qualityGrade(req.getQualityGrade()).availableFrom(req.getAvailableFrom()).listingType(req.getListingType())
+				.auctionEndTime(req.getAuctionEndTime())
 				.status("PENDING_APPROVAL").aiVerifiedStatus("PENDING").build();
 		listing=listingRepository.save(listing);
 		aiVerificationService.verifyListing(listing.getId());
 		return listing;
 	}
-	@Cacheable(value="activeListing")
+	@Cacheable(value="activeListings")
 	public List<BiomassListing> getActiveListings(){
 		return listingRepository.findByStatus("ACTIVE");
 	}

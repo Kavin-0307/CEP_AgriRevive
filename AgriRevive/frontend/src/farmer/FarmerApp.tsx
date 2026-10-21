@@ -8,6 +8,7 @@ import ListingFormPage from './ListingFormPage'
 import MyListings from './MyListings'
 import AuctionsPage from './AuctionsPage'
 import FarmerOrders from './FarmerOrders'
+import api, { mapBackendListingToFrontend, mapOrder } from '../api'
 import FarmerProfile from './FarmerProfile'
 
 type Props = {
@@ -22,16 +23,34 @@ export default function FarmerApp({ listings, setListings, orders, setOrders, bi
   const [farmer, setFarmer] = useStoredState<Farmer | null>('agri-farmer', null)
   const [registry, setRegistry] = useStoredState<Record<string, Farmer>>('agri-farmers', {})
 
+  useEffect(() => {
+    if (farmer && localStorage.getItem('token')) {
+      api.get('/biomass').then(res => setListings(res.data.map(mapBackendListingToFrontend))).catch(err => console.error(err))
+      api.get('/orders/mine').then(res => setOrders(res.data.map(mapOrder))).catch(err => console.error(err))
+    }
+  }, [farmer, setListings, setOrders])
+
   const saveFarmer = (next: Farmer) => {
-    setFarmer(next)
-    setRegistry(old => ({ ...old, [next.email.toLowerCase()]: next }))
+    const normalized: Farmer = {
+      name: next.name || 'Farmer',
+      email: (next.email || '').trim().toLowerCase(),
+      phone: next.phone || '',
+      farmName: next.farmName || (next as any).organizationName || '',
+      state: next.state || '',
+      district: next.district || '',
+      pickupAddress: next.pickupAddress || (next as any).address || '',
+      notifyOrders: next.notifyOrders ?? true,
+      notifyBids: next.notifyBids ?? true,
+    }
+    setFarmer(normalized)
+    setRegistry(old => ({ ...old, [normalized.email]: normalized }))
   }
 
-  const mine = useMemo(() => (farmer ? listings.filter(item => item.farmerEmail === farmer.email) : []), [farmer, listings])
+  const mine = useMemo(() => (farmer ? listings.filter(item => item.farmerEmail?.toLowerCase() === farmer.email.toLowerCase()) : []), [farmer, listings])
   const myOrders = useMemo(() => {
     if (!farmer) return []
     const ids = new Set(mine.map(item => item.id))
-    return orders.filter(order => order.farmerEmail === farmer.email || ids.has(order.listingId))
+    return orders.filter(order => order.farmerEmail?.toLowerCase() === farmer.email.toLowerCase() || ids.has(order.listingId))
   }, [farmer, mine, orders])
 
   const context: FarmerContextValue | null = farmer
@@ -42,7 +61,7 @@ export default function FarmerApp({ listings, setListings, orders, setOrders, bi
     <Routes>
       <Route path="login" element={farmer ? <Navigate to="/farmer" replace /> : <FarmerAuth registry={registry} onAuth={saveFarmer} />} />
       <Route path="register" element={farmer ? <Navigate to="/farmer" replace /> : <FarmerAuth register registry={registry} onAuth={saveFarmer} />} />
-      <Route element={context ? <FarmerContext.Provider value={context}><FarmerLayout onLogout={() => setFarmer(null)} /></FarmerContext.Provider> : <Navigate to="/farmer/login" replace />}>
+      <Route element={context ? <FarmerContext.Provider value={context}><FarmerLayout onLogout={() => { setFarmer(null); localStorage.removeItem('token'); }} /></FarmerContext.Provider> : <Navigate to="/farmer/login" replace />}>
         <Route index element={<FarmerDashboard />} />
         <Route path="listings" element={<MyListings />} />
         <Route path="listings/new" element={<ListingFormPage />} />
@@ -66,35 +85,61 @@ function FarmerAuth({ register = false, registry, onAuth }: { register?: boolean
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
-
-  const submit = (event: FormEvent) => {
+  const submit = async (event: FormEvent) => {
     event.preventDefault()
     const key = email.trim().toLowerCase()
+    
     if (!key.includes('@') || password.length < 6) {
       setError('Enter a valid email and a password with at least 6 characters.')
       return
     }
-    if (register) {
-      if (!name.trim() || !state || !district.trim()) {
-        setError('Add your name, state and district to create a farmer account.')
-        return
-      }
-      if (registry[key]) {
-        setError('A farmer account with this email already exists in this browser. Please sign in instead.')
-        return
-      }
-      onAuth({
-        name: name.trim(), email: key, phone: phone.trim(), farmName: farmName.trim() || `${name.trim()}'s farm`,
-        state, district: district.trim(), pickupAddress: '', notifyOrders: true, notifyBids: true,
-      })
-    } else {
-      const existing = registry[key]
-      onAuth(existing ?? {
-        name: key.split('@')[0].replace(/[._-]/g, ' '), email: key, phone: '', farmName: 'My farm',
-        state: '', district: '', pickupAddress: '', notifyOrders: true, notifyBids: true,
-      })
+    
+    try {
+        const stored = registry[key]
+        if (register) {
+            const response = await api.post('/auth/register', {
+                name: name.trim(),
+                email: key,
+                phone: phone.trim() || '0000000000',
+                password,
+                role: 'FARMER',
+                organizationName: farmName.trim(),
+                state,
+                district: district.trim()
+            });
+            localStorage.setItem('token', response.data.token);
+            const u = response.data.user || {};
+            onAuth({
+                name: u.name || name.trim(),
+                email: u.email || key,
+                phone: u.phone || phone.trim(),
+                farmName: u.organizationName || farmName.trim(),
+                state: u.state || state,
+                district: u.district || district.trim(),
+                pickupAddress: u.address || stored?.pickupAddress || '',
+                notifyOrders: true,
+                notifyBids: true,
+            });
+        } else {
+            const response = await api.post('/auth/login', { email: key, password });
+            localStorage.setItem('token', response.data.token);
+            const u = response.data.user || {};
+            onAuth({
+                name: u.name || stored?.name || 'Farmer',
+                email: u.email || key,
+                phone: u.phone || stored?.phone || '',
+                farmName: u.organizationName || stored?.farmName || '',
+                state: u.state || stored?.state || '',
+                district: u.district || stored?.district || '',
+                pickupAddress: u.address || stored?.pickupAddress || '',
+                notifyOrders: stored?.notifyOrders ?? true,
+                notifyBids: stored?.notifyBids ?? true,
+            });
+        }
+        navigate('/farmer')
+    } catch (err: any) {
+        setError(err?.response?.data?.message || 'Invalid credentials or server error. Is your Spring Boot app running?')
     }
-    navigate('/farmer')
   }
 
   return (

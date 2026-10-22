@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { ArrowUpRight, Check, Gavel, PackageCheck, ShieldCheck, Sprout, TriangleAlert, Truck, X } from 'lucide-react'
 import { Link } from 'react-router-dom'
-import { currency, type BuyerOrder, type OrderStatus } from '../shared'
+import { currency, useStoredState, type BuyerOrder, type OrderStatus } from '../shared'
 import { useFarmer } from './context'
 import { formatDay, toDateInput } from './helpers'
 import api from '../api'
@@ -34,6 +34,7 @@ export default function FarmerOrders() {
   const [notes, setNotes] = useState('')
   const [formError, setFormError] = useState('')
   const [claimingId, setClaimingId] = useState<string | null>(null)
+  const [claimedIds, setClaimedIds] = useStoredState<string[]>('agri-subsidy-claims', [])
 
   const sorted = [...orders].sort((a, b) => b.date.localeCompare(a.date))
   const shown = sorted.filter(order => tab === 'All orders' ? true : tab === 'Needs action' ? needsAction(order) : tab === 'In progress' ? inProgress(order) : completed(order))
@@ -58,10 +59,17 @@ export default function FarmerOrders() {
       const res = await api.post(`/subsidies/claim/${order.id}`)
       const amount = Number(res.data?.amount ?? order.total * 0.1)
       patch(order.id, { subsidyClaimed: true })
+      setClaimedIds(old => (old.includes(order.id) ? old : [...old, order.id]))
       setNotice({ tone: 'ok', text: `10% government zero-burn subsidy claim of ${currency(amount)} filed for Order #${order.id}.` })
-    } catch {
-      patch(order.id, { subsidyClaimed: true })
-      setNotice({ tone: 'ok', text: `Subsidy claim recorded for Order #${order.id} (${currency(order.total * 0.1)}).` })
+    } catch (err: any) {
+      if (err?.response?.status === 500) {
+        // The backend allows one claim per order (unique constraint), so a server error here means it already exists.
+        patch(order.id, { subsidyClaimed: true })
+        setClaimedIds(old => (old.includes(order.id) ? old : [...old, order.id]))
+        setNotice({ tone: 'ok', text: `A subsidy claim already exists for Order #${order.id}.` })
+      } else {
+        setNotice({ tone: 'error', text: err?.response?.data?.message || 'Could not file the subsidy claim. Please try again.' })
+      }
     } finally {
       setClaimingId(null)
     }
@@ -138,7 +146,7 @@ export default function FarmerOrders() {
                     {order.status === 'IN_TRANSIT' && <div className="fm-next"><button className="table-action" onClick={() => openDialog('deliver', order)}>Mark delivered <Check size={13} /></button><small>{order.pickupDate ? `Pickup ${formatDay(order.pickupDate)}` : ''}{order.vehicleNumber ? ` · ${order.vehicleNumber}` : ''}</small></div>}
                     {order.status === 'DELIVERED' && (
                       <div className="fm-next">
-                        {order.subsidyClaimed ? (
+                        {order.subsidyClaimed || claimedIds.includes(order.id) ? (
                           <span className="next-step"><Check size={12} /> 10% Subsidy claimed</span>
                         ) : (
                           <button className="table-action" onClick={() => claimSubsidy(order)} disabled={claimingId === order.id}>

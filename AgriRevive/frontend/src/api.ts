@@ -18,6 +18,7 @@ export function clearSessionStorage() {
   localStorage.removeItem('agri-farmer')
   localStorage.removeItem('agri-orders')
   localStorage.removeItem('agri-bids')
+  localStorage.removeItem('agri-subsidy-claims')
 }
 
 const api = axios.create({ baseURL: API_BASE_URL })

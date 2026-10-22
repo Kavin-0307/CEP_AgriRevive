@@ -358,6 +358,8 @@ function ListingDetail({
   const stompRef = useRef<Client | null>(null)
 
   const userBids = bids.filter(item => item.listingId === id).sort((a, b) => b.date.localeCompare(a.date))
+  const latestBidRef = useRef(0)
+  latestBidRef.current = Math.max(listing?.highestBid ?? 0, ...userBids.map(item => item.amount))
 
   // Connect STOMP over SockJS for real-time live auction bidding
   useEffect(() => {
@@ -457,21 +459,26 @@ function ListingDetail({
       return
     }
 
-    if (stompRef.current?.connected) {
-      stompRef.current.publish({
-        destination: '/app/bid',
-        body: JSON.stringify({ listingId: Number(id), amount }),
-      })
+    if (!stompRef.current?.connected) {
+      setNotice('The live bidding connection is not ready yet. Please wait a moment and try again.')
+      return
     }
 
-    setListings(old =>
-      old.map(item =>
-        item.id === id ? { ...item, highestBid: Math.max(item.highestBid ?? 0, amount), bidCount: (item.bidCount ?? 0) + 1 } : item,
-      ),
-    )
-    setBids(old => [{ listingId: id, amount, date: new Date().toISOString(), bidderName: buyer?.name, bidderOrganization: buyer?.organization }, ...old])
-    setNotice('Your live bid has been broadcast and recorded.')
+    // The server broadcasts every accepted bid on /topic/bids/{id}; the subscription above
+    // updates the listing and bid list, so we don't update optimistically (avoids double counting).
+    stompRef.current.publish({
+      destination: '/app/bid',
+      body: JSON.stringify({ listingId: Number(id), amount }),
+    })
+    setNotice('Your bid was sent. Waiting for the server to confirm…')
     setBid('')
+    window.setTimeout(() => {
+      if (latestBidRef.current >= amount) {
+        setNotice('Your bid was accepted and is now the highest bid.')
+      } else {
+        setNotice('Bid not accepted. It must be higher than the current highest bid, the auction must still be live, and you cannot bid on your own listing.')
+      }
+    }, 1800)
   }
 
   return <div className="content-width detail-page">

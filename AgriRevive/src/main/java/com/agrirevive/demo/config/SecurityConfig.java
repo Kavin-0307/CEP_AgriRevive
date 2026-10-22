@@ -4,6 +4,7 @@ import java.util.List;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
@@ -17,7 +18,7 @@ import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 import com.agrirevive.demo.security.JwtAuthFilter;
-
+import org.springframework.security.web.authentication.HttpStatusEntryPoint;
 @Configuration
 @EnableWebSecurity
 @EnableMethodSecurity
@@ -28,8 +29,9 @@ public class SecurityConfig {
 	}
 	@Bean
 	public SecurityFilterChain securityFilterChain(HttpSecurity http)throws Exception{
-		http.csrf(csrf->csrf.disable()).cors(cors->cors.configure(http)).authorizeHttpRequests(auth->auth.requestMatchers("/api/auth/**").permitAll().
-				requestMatchers("/api/public/**").permitAll().requestMatchers("/error").permitAll().anyRequest().authenticated()).sessionManagement(sess->sess.sessionCreationPolicy(SessionCreationPolicy.STATELESS)).addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
+		http.csrf(csrf->csrf.disable()).cors(cors->cors.configure(http)).exceptionHandling(ex->ex.authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)))
+		.authorizeHttpRequests(auth->auth.requestMatchers("/api/auth/**").permitAll().
+				requestMatchers("/api/public/**").permitAll().requestMatchers("/error").permitAll().requestMatchers("/ws/**").permitAll().anyRequest().authenticated()).sessionManagement(sess->sess.sessionCreationPolicy(SessionCreationPolicy.STATELESS)).addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
 		return http.build();
 	}
 	@Bean
@@ -40,7 +42,7 @@ public class SecurityConfig {
 	public CorsConfigurationSource corsConfigurationSource() {
 		CorsConfiguration config=new CorsConfiguration();
 		config.setAllowedOrigins(List.of("http://localhost:3000","http://localhost:5173"));
-		 config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+		 config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS","PATCH"));
 	        config.setAllowedHeaders(List.of("*"));
 	        config.setAllowCredentials(true);
 	        

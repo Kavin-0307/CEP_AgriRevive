@@ -22,4 +22,14 @@ public class BiomassController {
 	public List<BiomassListing> getActiveListings(){
 		return listingService.getActiveListings();
 	}
+	@GetMapping("/mine")
+	@PreAuthorize("hasRole('FARMER')")
+	public List<BiomassListing> getMyListings(Authentication authentication){
+		return listingService.getMyListings(authentication.getName());
+	}
+	@PutMapping("/{id}")
+	@PreAuthorize("hasRole('FARMER')")
+	public BiomassListing updateListing (@PathVariable Long id,@RequestBody BiomassListingRequest request,Authentication authentication) {
+		return listingService.updateListing(id,authentication.getName(),request);
+	}
 }

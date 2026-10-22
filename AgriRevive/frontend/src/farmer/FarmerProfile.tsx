@@ -66,14 +66,14 @@ export default function FarmerProfile() {
             <h3>Notifications</h3>
             <label className="fm-toggle"><input type="checkbox" checked={Boolean(form.notifyOrders)} onChange={e => update('notifyOrders', e.target.checked)} /><span><strong>Order updates</strong><small>Tell me when a buyer requests or pays for my biomass.</small></span></label>
             <label className="fm-toggle"><input type="checkbox" checked={Boolean(form.notifyBids)} onChange={e => update('notifyBids', e.target.checked)} /><span><strong>Auction bids</strong><small>Tell me when someone bids on or wins one of my auctions.</small></span></label>
-            <p className="fm-hint">Preferences are saved to your profile. Alerts aren't sent in this demo workspace.</p>
+            <p className="fm-hint">Preferences are saved to your profile for this workspace.</p>
           </div>
 
           {error && <p className="form-error fm-form-error" role="alert">{error}</p>}
-          <div className="profile-form-footer"><span>{saved && <><Check size={15} /> Changes saved to this browser.</>}</span><button className="button button-primary">Save changes <ArrowRight size={15} /></button></div>
+          <div className="profile-form-footer"><span>{saved && <><Check size={15} /> Profile preferences saved.</>}</span><button className="button button-primary">Save changes <ArrowRight size={15} /></button></div>
         </form>
       </div>
-      <div className="demo-disclosure"><ShieldCheck size={15} /><span><strong>Demo workspace:</strong> your profile, listings and orders are saved in this browser only. No payment is processed.</span></div>
+      <div className="demo-disclosure"><ShieldCheck size={15} /><span><strong>Connected workspace:</strong> your listings, auctions, and orders sync with the AgriRevive backend; extended farm profile preferences are saved locally on this device.</span></div>
     </div>
   )
 }

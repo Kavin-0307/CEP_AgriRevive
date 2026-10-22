@@ -1,10 +1,11 @@
-import { useMemo, useState, type ChangeEvent, type FormEvent } from 'react'
+import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from 'react'
 import { ArrowLeft, ArrowRight, Gavel, ImagePlus, Tag, Trash2 } from 'lucide-react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { INDIAN_STATES, RESIDUE_TYPES, currency, type Listing } from '../shared'
+import { INDIAN_STATES, RESIDUE_TYPES, currency, residueMetaFor, type Listing, type ResidueTypeDTO } from '../shared'
 import { useFarmer } from './context'
 import { bidsFor, fileToDataUrl, formatDisplayDate, newId, toDateInput, toLocalInput } from './helpers'
-import api from '../api';
+import api, { fetchResidueTypes, mapBackendListingToFrontend } from '../api'
+
 type FormState = {
   listingType: 'FIXED_PRICE' | 'AUCTION'
   residue: string
@@ -29,37 +30,73 @@ export default function ListingFormPage() {
   const navigate = useNavigate()
   const { farmer, listings, setListings, bids } = useFarmer()
   const existing = isEdit ? listings.find(item => item.id === id) : undefined
+  const [serverResidueTypes, setServerResidueTypes] = useState<ResidueTypeDTO[]>([])
+
+  useEffect(() => {
+    fetchResidueTypes()
+      .then(types => {
+        if (Array.isArray(types) && types.length > 0) setServerResidueTypes(types)
+      })
+      .catch(() => {})
+  }, [])
 
   const [form, setForm] = useState<FormState>(() => {
     if (existing) {
       const defaultPhoto = RESIDUE_TYPES.some(item => item.image === existing.image)
       return {
-        listingType: existing.listingType, residue: existing.type || RESIDUE_TYPES[0].name, title: existing.title || '', description: existing.description || '',
-        quantity: String(existing.quantity ?? ''), price: String(existing.price ?? ''), grade: existing.grade || 'A', moisture: String(existing.moisture ?? ''),
-        state: existing.state || '', district: existing.district ?? (existing.location || '').split(',')[0].trim(),
-        pickupAddress: existing.pickupAddress ?? '', availableFrom: existing.availableFrom ?? toDateInput(new Date()),
-        auctionEnds: existing.auctionEnds ? existing.auctionEnds.slice(0, 16) : '', image: defaultPhoto ? '' : (existing.image || ''),
+        listingType: existing.listingType,
+        residue: existing.type || RESIDUE_TYPES[0].name,
+        title: existing.title || '',
+        description: existing.description || '',
+        quantity: String(existing.quantity ?? ''),
+        price: String(existing.price ?? ''),
+        grade: existing.grade || 'A',
+        moisture: String(existing.moisture ?? ''),
+        state: existing.state || '',
+        district: existing.district ?? (existing.location || '').split(',')[0].trim(),
+        pickupAddress: existing.pickupAddress ?? '',
+        availableFrom: existing.availableFrom ?? toDateInput(new Date()),
+        auctionEnds: existing.auctionEnds ? existing.auctionEnds.slice(0, 16) : '',
+        image: defaultPhoto ? '' : (existing.image || ''),
       }
     }
     const inThreeDays = new Date(Date.now() + 3 * 24 * 3600 * 1000)
     inThreeDays.setMinutes(0, 0, 0)
     return {
-      listingType: params.get('type') === 'auction' ? 'AUCTION' : 'FIXED_PRICE', residue: RESIDUE_TYPES[0].name, title: '', description: '',
-      quantity: '', price: '', grade: 'A', moisture: '', state: farmer.state || '', district: farmer.district || '',
-      pickupAddress: farmer.pickupAddress || '', availableFrom: toDateInput(new Date()), auctionEnds: toLocalInput(inThreeDays), image: '',
+      listingType: params.get('type') === 'auction' ? 'AUCTION' : 'FIXED_PRICE',
+      residue: RESIDUE_TYPES[0].name,
+      title: '',
+      description: '',
+      quantity: '',
+      price: '',
+      grade: 'A',
+      moisture: '',
+      state: farmer.state || '',
+      district: farmer.district || '',
+      pickupAddress: farmer.pickupAddress || '',
+      availableFrom: toDateInput(new Date()),
+      auctionEnds: toLocalInput(inThreeDays),
+      image: '',
     }
   })
   const [error, setError] = useState('')
   const [photoBusy, setPhotoBusy] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
 
   const placedBids = existing ? bidsFor(existing.id, bids).length : 0
   const auctionLocked = Boolean(existing && existing.listingType === 'AUCTION' && placedBids > 0)
   const isAuction = form.listingType === 'AUCTION'
-  const residueMeta = RESIDUE_TYPES.find(item => item.name === form.residue)
-  const previewImage = form.image || residueMeta?.image || RESIDUE_TYPES[0].image
-  const residueOptions = useMemo<{ name: string }[]>(() => (existing && !RESIDUE_TYPES.some(item => item.name === existing.type) ? [{ name: existing.type }, ...RESIDUE_TYPES] : RESIDUE_TYPES), [existing])
+  const residueMeta = residueMetaFor(form.residue)
+  const previewImage = form.image || residueMeta.image
+  const residueOptions = useMemo<{ name: string }[]>(() => {
+    const base = serverResidueTypes.length > 0 ? serverResidueTypes.map(t => ({ name: t.name })) : RESIDUE_TYPES
+    return existing && !base.some(item => item.name === existing.type) ? [{ name: existing.type }, ...base] : base
+  }, [existing, serverResidueTypes])
 
-  const set = <K extends keyof FormState>(key: K, value: FormState[K]) => { setForm(current => ({ ...current, [key]: value })); setError('') }
+  const set = <K extends keyof FormState>(key: K, value: FormState[K]) => {
+    setForm(current => ({ ...current, [key]: value }))
+    setError('')
+  }
 
   const onPhoto = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
@@ -75,8 +112,18 @@ export default function ListingFormPage() {
   if (isEdit && !existing) {
     return <div className="content-width"><div className="empty-state"><h3>Listing not found</h3><p>It may have been deleted, or it belongs to another farmer account.</p><Link to="/farmer/listings" className="button button-outline">Back to my listings</Link></div></div>
   }
+
+  const resolveResidueTypeId = (name: string): number => {
+    const normalized = name.trim().toLowerCase()
+    const fromServer = serverResidueTypes.find(t => t.name.trim().toLowerCase() === normalized)
+    if (fromServer) return fromServer.id
+    const fromDefault = RESIDUE_TYPES.find(t => t.name.toLowerCase() === normalized)
+    return fromDefault ? fromDefault.id : 1
+  }
+
   const submit = async (event: FormEvent) => {
     event.preventDefault()
+    if (submitting || photoBusy) return
     const quantity = Number(form.quantity)
     const price = Number(form.price)
     const moisture = Number(form.moisture)
@@ -84,7 +131,7 @@ export default function ListingFormPage() {
     const description = (form.description || '').trim()
     const district = (form.district || '').trim()
     const pickupAddress = (form.pickupAddress || '').trim()
-    
+
     if (title.length < 4) return setError('Give your listing a clear title (at least 4 characters).')
     if (!(quantity > 0)) return setError('Enter the available quantity in tonnes (more than 0).')
     if (!(price > 0)) return setError(isAuction ? 'Enter a starting price per tonne.' : 'Enter a price per tonne.')
@@ -92,59 +139,78 @@ export default function ListingFormPage() {
     if (!form.state || !district) return setError('Select the state and enter the district where the biomass is stored.')
     if (!pickupAddress) return setError('Add a pickup address so buyers know where to collect.')
     if (!form.availableFrom) return setError('Choose the date the biomass is available from.')
+    if (isAuction && !isEdit) {
+      if (!form.auctionEnds) return setError('Choose when the auction ends.')
+      if (new Date(form.auctionEnds).getTime() <= Date.now()) return setError('Auction end time must be in the future.')
+    }
 
-    const residueIdMap: Record<string, number> = {
-      'Rice straw': 1, 'Wheat straw': 2, 'Bagasse': 3, 'Cotton stalk': 4, 
-      'Groundnut shells': 5, 'Maize residue': 6
-    };
-    
+    const payload = {
+      residueTypeId: resolveResidueTypeId(form.residue),
+      title,
+      description: description || 'Farm-fresh biomass.',
+      quantityAvailable: quantity,
+      pricePerTonne: price,
+      qualityGrade: form.grade,
+      moisturePercent: moisture,
+      state: form.state,
+      district,
+      pickupAddress,
+      availableFrom: form.availableFrom,
+      listingType: form.listingType === 'AUCTION' ? 'AUCTION' : 'FIXED',
+      auctionEndTime: isAuction && form.auctionEnds ? (form.auctionEnds.length === 16 ? `${form.auctionEnds}:00` : form.auctionEnds) : null,
+    }
+
+    setSubmitting(true)
     try {
-        const res = await api.post('/biomass', {
-            residueTypeId: residueIdMap[form.residue] || 1,
-            title,
-            description: description || 'Farm-fresh biomass.',
-            quantityAvailable: quantity,
-            pricePerTonne: price,
-            qualityGrade: form.grade,
-            moisturePercent: moisture,
-            state: form.state,
-            district,
-            pickupAddress,
-            availableFrom: form.availableFrom,
-            listingType: form.listingType === 'AUCTION' ? 'AUCTION' : 'FIXED',
-            auctionEndTime: isAuction && form.auctionEnds ? form.auctionEnds : null
-        });
-        const created: Listing = {
-            id: res.data?.id ? String(res.data.id) : newId('ag'),
-            title,
-            type: form.residue,
-            location: `${district}, ${form.state}`,
-            state: form.state,
-            district,
-            quantity,
-            price,
-            grade: form.grade,
-            moisture,
-            available: formatDisplayDate(form.availableFrom),
-            availableFrom: form.availableFrom,
-            description: description || 'Farm-fresh biomass.',
-            image: previewImage,
-            color: residueMeta?.color || 'sage',
-            listingType: form.listingType,
-            auctionEnds: isAuction ? form.auctionEnds : undefined,
-            farmerEmail: farmer.email,
-            farmerName: farmer.name,
-            pickupAddress,
-            status: res.data?.status || 'PENDING_APPROVAL',
-            createdAt: new Date().toISOString()
-        };
-        setListings(old => [created, ...old.filter(item => item.id !== created.id)]);
-        
-        navigate('/farmer/listings', { state: { flash: `“${title}” was submitted for AI review!` } });
+      const res = isEdit && id
+        ? await api.put(`/biomass/${id}`, payload)
+        : await api.post('/biomass', payload)
+
+      const mapped = res.data?.id ? mapBackendListingToFrontend(res.data) : null
+      const saved: Listing = {
+        id: mapped?.id || (id ?? newId('ag')),
+        title,
+        type: form.residue,
+        location: `${district}, ${form.state}`,
+        state: form.state,
+        district,
+        quantity,
+        price,
+        grade: form.grade,
+        moisture,
+        available: formatDisplayDate(form.availableFrom),
+        availableFrom: form.availableFrom,
+        description: description || 'Farm-fresh biomass.',
+        image: form.image || mapped?.image || previewImage,
+        color: residueMeta.color,
+        listingType: form.listingType,
+        auctionEnds: isAuction ? form.auctionEnds : undefined,
+        highestBid: mapped?.highestBid ?? existing?.highestBid,
+        farmerEmail: farmer.email,
+        farmerName: farmer.name,
+        pickupAddress,
+        status: mapped?.status || existing?.status || 'PENDING_APPROVAL',
+        aiVerifiedStatus: mapped?.aiVerifiedStatus,
+        adminRemarks: mapped?.adminRemarks,
+        createdAt: mapped?.createdAt || existing?.createdAt || new Date().toISOString(),
+      }
+      setListings(old => [saved, ...old.filter(item => item.id !== saved.id)])
+
+      navigate('/farmer/listings', {
+        state: {
+          flash: isEdit
+            ? `Changes to “${title}” were saved.`
+            : `“${title}” was submitted for AI quality review!`,
+        },
+      })
     } catch (err: any) {
-        setError(err?.response?.data?.message || "Failed to save to database. Is the backend running and residue_types seeded?");
+      setError(err?.response?.data?.message || 'Failed to save listing to the server. Make sure the Spring Boot backend is running.')
+    } finally {
+      setSubmitting(false)
     }
   }
+
+  const moistureValue = form.moisture !== '' ? Number(form.moisture) : null
 
   return (
     <div className="content-width">
@@ -171,7 +237,11 @@ export default function ListingFormPage() {
               <label className="fm-wide">Title<input value={form.title} onChange={e => set('title', e.target.value)} placeholder="e.g. Premium rice straw, sun-dried" maxLength={150} /></label>
               <label className="fm-wide">Description <small>Optional</small><textarea rows={4} value={form.description} onChange={e => set('description', e.target.value)} placeholder="Describe the condition, how it is baled or stored, and anything buyers should know." /></label>
               <label>Quantity available (tonnes)<input type="number" min="0" step="0.1" inputMode="decimal" value={form.quantity} onChange={e => set('quantity', e.target.value)} placeholder="e.g. 25" /></label>
-              <label>Moisture (%)<input type="number" min="0" max="100" step="0.1" inputMode="decimal" value={form.moisture} onChange={e => set('moisture', e.target.value)} placeholder="e.g. 12" /></label>
+              <label>Moisture (%)<input type="number" min="0" max="100" step="0.1" inputMode="decimal" value={form.moisture} onChange={e => set('moisture', e.target.value)} placeholder="e.g. 12" />
+                {moistureValue !== null && moistureValue > 20 && (
+                  <small className="fm-hint" style={{ color: '#bb5a3e' }}>Note: AI verification automatically rejects lots with moisture above 20%.</small>
+                )}
+              </label>
             </div>
           </fieldset>
 
@@ -207,7 +277,9 @@ export default function ListingFormPage() {
           {error && <p className="form-error fm-form-error" role="alert">{error}</p>}
           <div className="fm-form-footer">
             <Link to="/farmer/listings" className="button button-outline">Cancel</Link>
-            <button className="button button-primary" type="submit" disabled={photoBusy}>{isEdit ? 'Save changes' : 'Submit listing'} <ArrowRight size={16} /></button>
+            <button className="button button-primary" type="submit" disabled={photoBusy || submitting}>
+              {submitting ? 'Saving…' : isEdit ? 'Save changes' : 'Submit listing'} <ArrowRight size={16} />
+            </button>
           </div>
         </form>
 
@@ -226,7 +298,7 @@ export default function ListingFormPage() {
               <div className="listing-card-footer"><div><strong>{form.price ? currency(Number(form.price)) : '₹ –'}</strong><small>{isAuction ? 'starting bid' : 'per tonne'}</small></div></div>
             </div>
           </article>
-          <p className="fm-hint">{isEdit ? 'Changes appear for buyers right after you save.' : 'New listings are reviewed before they appear on the marketplace.'}</p>
+          <p className="fm-hint">{isEdit ? 'Changes appear for buyers right after you save.' : 'New listings are verified by AI within seconds before appearing on the marketplace.'}</p>
         </aside>
       </div>
     </div>

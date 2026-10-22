@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
-import type { BidRecord, Listing, ListingStatus } from '../shared'
+import { formatDisplayDate, type BidRecord, type Listing, type ListingStatus } from '../shared'
+
+export { formatDisplayDate }
 
 /** Re-renders on an interval so countdowns and "ended" states stay current. */
 export function useNow(intervalMs = 30000) {
@@ -18,9 +20,14 @@ export function newId(prefix: string) {
 export const LISTING_STATUS: Record<ListingStatus, { label: string; tone: string }> = {
   PENDING_APPROVAL: { label: 'Under review', tone: 'status-waiting' },
   ACTIVE: { label: 'Active', tone: 'status-done' },
+  REJECTED: { label: 'Rejected by AI', tone: 'status-due' },
   PAUSED: { label: 'Paused', tone: 'status-muted' },
   SOLD_OUT: { label: 'Sold out', tone: 'status-progress' },
   CLOSED: { label: 'Closed', tone: 'status-muted' },
+}
+
+export function listingStatusMeta(status?: ListingStatus) {
+  return (status && LISTING_STATUS[status]) || LISTING_STATUS.ACTIVE
 }
 
 export function bidsFor(listingId: string, bids: BidRecord[]) {
@@ -47,7 +54,7 @@ export type AuctionPhase = 'REVIEW' | 'LIVE' | 'ENDED' | 'AWARDED' | 'CLOSED' | 
 export function auctionPhase(listing: Listing, now: number): AuctionPhase {
   if (listing.status === 'PENDING_APPROVAL') return 'REVIEW'
   if (listing.status === 'SOLD_OUT') return 'AWARDED'
-  if (listing.status === 'CLOSED') return 'CLOSED'
+  if (listing.status === 'CLOSED' || listing.status === 'REJECTED') return 'CLOSED'
   if (listing.status === 'PAUSED') return 'PAUSED'
   const end = listing.auctionEnds ? new Date(listing.auctionEnds).getTime() : 0
   return end > now ? 'LIVE' : 'ENDED'
@@ -74,23 +81,14 @@ export function formatDay(iso: string) {
   return new Date(iso).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
-const pad = (n: number) => String(n).padStart(2, '0')
-
 /** Value for <input type="datetime-local"> in local time. */
 export function toLocalInput(date: Date) {
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}T${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
 }
 
 /** Value for <input type="date"> in local time. */
 export function toDateInput(date: Date) {
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
-}
-
-/** 'YYYY-MM-DD' -> 'Oct 12, 2026' (the format the buyer pages already show). */
-export function formatDisplayDate(isoDate: string) {
-  const [y, m, d] = isoDate.split('-').map(Number)
-  if (!y || !m || !d) return isoDate
-  return new Date(y, m - 1, d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
 }
 
 /** Reads an image file and downsizes it so it fits comfortably in localStorage. */

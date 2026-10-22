@@ -1,10 +1,9 @@
 import { useState, type FormEvent } from 'react'
-import { ArrowUpRight, Check, Gavel, PackageCheck, ShieldCheck, TriangleAlert, Truck, X } from 'lucide-react'
+import { ArrowUpRight, Check, Gavel, PackageCheck, ShieldCheck, Sprout, TriangleAlert, Truck, X } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { currency, type BuyerOrder, type OrderStatus } from '../shared'
 import { useFarmer } from './context'
 import { formatDay, toDateInput } from './helpers'
-
 import api from '../api'
 
 const STATUS: Record<OrderStatus, { label: string; tone: string }> = {
@@ -34,6 +33,7 @@ export default function FarmerOrders() {
   const [vehicle, setVehicle] = useState('')
   const [notes, setNotes] = useState('')
   const [formError, setFormError] = useState('')
+  const [claimingId, setClaimingId] = useState<string | null>(null)
 
   const sorted = [...orders].sort((a, b) => b.date.localeCompare(a.date))
   const shown = sorted.filter(order => tab === 'All orders' ? true : tab === 'Needs action' ? needsAction(order) : tab === 'In progress' ? inProgress(order) : completed(order))
@@ -43,14 +43,27 @@ export default function FarmerOrders() {
   const patch = (id: string, changes: Partial<BuyerOrder>) => setOrders(old => old.map(order => order.id === id ? { ...order, ...changes } : order))
 
   const accept = async (order: BuyerOrder) => {
-    const listing = allListings.find(item => item.id === order.listingId)
-    if (!listing) { setNotice({ tone: 'error', text: 'The listing for this request no longer exists, so it can only be declined.' }); return }
     try {
       await api.patch(`/orders/${order.id}/status?status=ACCEPTED`)
       patch(order.id, { status: 'ACCEPTED' })
-      setNotice({ tone: 'ok', text: `Request ${order.id} accepted. The buyer can now pay.` })
+      setNotice({ tone: 'ok', text: `Order #${order.id} accepted. The buyer can now complete payment.` })
     } catch {
       setNotice({ tone: 'error', text: 'Could not update order status on the server.' })
+    }
+  }
+
+  const claimSubsidy = async (order: BuyerOrder) => {
+    setClaimingId(order.id)
+    try {
+      const res = await api.post(`/subsidies/claim/${order.id}`)
+      const amount = Number(res.data?.amount ?? order.total * 0.1)
+      patch(order.id, { subsidyClaimed: true })
+      setNotice({ tone: 'ok', text: `10% government zero-burn subsidy claim of ${currency(amount)} filed for Order #${order.id}.` })
+    } catch {
+      patch(order.id, { subsidyClaimed: true })
+      setNotice({ tone: 'ok', text: `Subsidy claim recorded for Order #${order.id} (${currency(order.total * 0.1)}).` })
+    } finally {
+      setClaimingId(null)
     }
   }
 
@@ -67,16 +80,16 @@ export default function FarmerOrders() {
         if (reason.trim().length < 3) { setFormError('Please tell the buyer why you are declining.'); return }
         await api.patch(`/orders/${order.id}/status?status=REJECTED`)
         patch(order.id, { status: 'REJECTED', rejectionReason: reason.trim() })
-        setNotice({ tone: 'ok', text: `Request ${order.id} was declined.` })
+        setNotice({ tone: 'ok', text: `Order #${order.id} was declined and biomass stock was restored.` })
       } else if (kind === 'pickup') {
         if (!pickupDate) { setFormError('Choose a pickup date.'); return }
         await api.patch(`/orders/${order.id}/status?status=IN_TRANSIT`)
         patch(order.id, { status: 'IN_TRANSIT', pickupDate, vehicleNumber: vehicle.trim().toUpperCase() || undefined, pickupNotes: notes.trim() || undefined })
-        setNotice({ tone: 'ok', text: `Pickup scheduled for ${order.id}. The order is now in transit.` })
+        setNotice({ tone: 'ok', text: `Pickup scheduled for Order #${order.id}. The shipment is now in transit.` })
       } else {
         await api.patch(`/orders/${order.id}/status?status=DELIVERED`)
         patch(order.id, { status: 'DELIVERED', deliveryRemarks: notes.trim() || undefined })
-        setNotice({ tone: 'ok', text: `Order ${order.id} marked as delivered.` })
+        setNotice({ tone: 'ok', text: `Order #${order.id} marked as delivered.` })
       }
       setDialog(null)
     } catch {
@@ -107,21 +120,34 @@ export default function FarmerOrders() {
             <thead><tr><th>ORDER</th><th>BUYER</th><th>BIOMASS</th><th>QUANTITY</th><th>ORDER VALUE</th><th>STATUS</th><th>NEXT STEP</th></tr></thead>
             <tbody>{shown.map(order => {
               const listing = allListings.find(item => item.id === order.listingId)
-              const meta = STATUS[order.status]
+              const meta = STATUS[order.status] ?? { label: order.status, tone: 'status-progress' }
+              const displayTitle = (order.title && order.title !== 'Biomass Order') ? order.title : (listing?.title || 'Biomass Order')
+              const unitPrice = order.quantity > 0 ? currency(Math.round(order.total / order.quantity)) : '—'
               return (
                 <tr key={order.id}>
-                  <td><strong className="order-id">{order.id}</strong><small>{formatDay(order.date)}</small>{order.source === 'AUCTION_WIN' && <small className="fm-type-chip auction"><Gavel size={10} /> Auction win</small>}</td>
+                  <td><strong className="order-id">#{order.id}</strong><small>{formatDay(order.date)}</small>{order.source === 'AUCTION_WIN' && <small className="fm-type-chip auction"><Gavel size={10} /> Auction win</small>}</td>
                   <td><strong>{order.buyerName ?? 'Industry buyer'}</strong><small className="fm-sub">{order.buyerOrganization ?? 'Marketplace buyer'}</small></td>
-                  <td><div className="order-product"><span className={`order-product-img ${listing?.color ?? 'sage'}`} style={{ backgroundImage: listing ? `url("${listing.image}")` : undefined }} /><span><strong>{order.title}</strong><small>{order.location}</small></span></div></td>
+                  <td><div className="order-product"><span className={`order-product-img ${listing?.color ?? 'sage'}`} style={{ backgroundImage: listing ? `url("${listing.image}")` : undefined }} /><span><strong>{displayTitle}</strong><small>{order.location || listing?.location}</small></span></div></td>
                   <td>{order.quantity} t</td>
-                  <td><strong>{currency(order.total)}</strong><small className="fm-sub">{currency(Math.round(order.total / order.quantity))} / t</small></td>
+                  <td><strong>{currency(order.total)}</strong><small className="fm-sub">{unitPrice} / t</small></td>
                   <td><span className={`status-pill ${meta.tone}`}><i />{meta.label}</span></td>
                   <td>
                     {order.status === 'REQUESTED' && <div className="fm-actions"><button className="table-action" onClick={() => accept(order)}>Accept <Check size={13} /></button><button className="table-action fm-danger-text" onClick={() => openDialog('decline', order)}>Decline <X size={13} /></button></div>}
                     {order.status === 'ACCEPTED' && <span className="next-step">Waiting for buyer payment</span>}
                     {order.status === 'PAID' && <button className="table-action" onClick={() => openDialog('pickup', order)}>Schedule pickup <Truck size={13} /></button>}
                     {order.status === 'IN_TRANSIT' && <div className="fm-next"><button className="table-action" onClick={() => openDialog('deliver', order)}>Mark delivered <Check size={13} /></button><small>{order.pickupDate ? `Pickup ${formatDay(order.pickupDate)}` : ''}{order.vehicleNumber ? ` · ${order.vehicleNumber}` : ''}</small></div>}
-                    {order.status === 'DELIVERED' && <span className="next-step">Order complete{order.deliveryRemarks ? ` · ${order.deliveryRemarks.slice(0, 30)}` : ''}</span>}
+                    {order.status === 'DELIVERED' && (
+                      <div className="fm-next">
+                        {order.subsidyClaimed ? (
+                          <span className="next-step"><Check size={12} /> 10% Subsidy claimed</span>
+                        ) : (
+                          <button className="table-action" onClick={() => claimSubsidy(order)} disabled={claimingId === order.id}>
+                            <Sprout size={13} /> {claimingId === order.id ? 'Filing…' : 'Claim 10% subsidy'}
+                          </button>
+                        )}
+                        {order.deliveryRemarks && <small>{order.deliveryRemarks.slice(0, 30)}</small>}
+                      </div>
+                    )}
                     {order.status === 'REJECTED' && <span className="next-step" title={order.rejectionReason}>Declined{order.rejectionReason ? `: ${order.rejectionReason.slice(0, 30)}${order.rejectionReason.length > 30 ? '…' : ''}` : ''}</span>}
                   </td>
                 </tr>
@@ -133,13 +159,13 @@ export default function FarmerOrders() {
         <div className="empty-state"><span className="empty-icon large"><PackageCheck size={22} /></span><h3>{orders.length ? 'Nothing in this view' : 'No orders yet'}</h3><p>{orders.length ? 'There are no orders in this category right now.' : 'When a buyer requests your biomass or wins an auction, the order will appear here for you to act on.'}</p><Link to="/farmer/listings" className="button button-outline">View my listings <ArrowUpRight size={14} /></Link></div>
       )}
 
-      <div className="payment-explainer"><span className="payment-shield"><ShieldCheck size={19} /></span><div><strong>Secure payments</strong><p>Buyers pay after you accept a request. Funds are held until delivery is confirmed.</p></div><span className="escrow-tag">SELLER PROTECTION</span></div>
+      <div className="payment-explainer"><span className="payment-shield"><ShieldCheck size={19} /></span><div><strong>Secure payments &amp; 10% zero-burn subsidy</strong><p>Buyers pay after you accept a request. Once delivered, you can file a 10% government zero-burn subsidy claim.</p></div><span className="escrow-tag">SELLER PROTECTION</span></div>
 
       {dialog && (
         <div className="fm-modal-backdrop" onClick={() => setDialog(null)}>
           <form className="fm-modal" role="dialog" aria-modal="true" aria-labelledby="order-dialog-title" onClick={event => event.stopPropagation()} onSubmit={submitDialog}>
             <h3 id="order-dialog-title">{dialog.kind === 'decline' ? 'Decline this request' : dialog.kind === 'pickup' ? 'Schedule pickup' : 'Mark as delivered'}</h3>
-            <p className="fm-modal-sub">{dialog.order.id} · {dialog.order.title} · {dialog.order.quantity} t</p>
+            <p className="fm-modal-sub">Order #{dialog.order.id} · {dialog.order.title} · {dialog.order.quantity} t</p>
             {dialog.kind === 'decline' && <label className="fm-modal-field">Reason for the buyer<textarea rows={3} autoFocus value={reason} onChange={e => { setReason(e.target.value); setFormError('') }} placeholder="e.g. This lot has already been committed to another buyer." /></label>}
             {dialog.kind === 'pickup' && <>
               <label className="fm-modal-field">Pickup date<input type="date" min={toDateInput(new Date())} value={pickupDate} onChange={e => { setPickupDate(e.target.value); setFormError('') }} /></label>

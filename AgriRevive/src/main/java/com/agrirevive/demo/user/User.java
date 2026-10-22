@@ -1,5 +1,6 @@
 package com.agrirevive.demo.user;
 import lombok.*;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import java.io.Serializable;
 import java.time.LocalDateTime;
@@ -10,7 +11,9 @@ public class User implements Serializable {
 	@Id
 	@GeneratedValue(strategy=GenerationType.IDENTITY)
 	private Long id;
-	private String name,email,phone,passwordHash;
+	private String name,email,phone;
+	@JsonIgnore
+	private String passwordHash;
 	@Enumerated(EnumType.STRING)
 	private Role role;
 	private String status;

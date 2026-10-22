@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type Dispatch, type FormEvent, type ReactNode, type SetStateAction } from 'react'
+import { useCallback, useEffect, useMemo, useState, type Dispatch, type FormEvent, type ReactNode, type SetStateAction } from 'react'
 import { ArrowRight, ArrowUpRight, Bell, CircleHelp, Gavel, LayoutDashboard, LogOut, Menu, PackagePlus, PackageCheck, Settings2, ShieldCheck, Sprout, Tractor, ChevronDown, Boxes, X } from 'lucide-react'
 import { Link, Navigate, NavLink, Outlet, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { Brand, INDIAN_STATES, useStoredState, type BidRecord, type BuyerOrder, type Farmer, type Listing } from '../shared'
@@ -8,7 +8,7 @@ import ListingFormPage from './ListingFormPage'
 import MyListings from './MyListings'
 import AuctionsPage from './AuctionsPage'
 import FarmerOrders from './FarmerOrders'
-import api, { mapBackendListingToFrontend, mapOrder } from '../api'
+import api, { clearSessionStorage, mapBackendListingToFrontend, mapOrder } from '../api'
 import FarmerProfile from './FarmerProfile'
 
 type Props = {
@@ -23,12 +23,34 @@ export default function FarmerApp({ listings, setListings, orders, setOrders, bi
   const [farmer, setFarmer] = useStoredState<Farmer | null>('agri-farmer', null)
   const [registry, setRegistry] = useStoredState<Record<string, Farmer>>('agri-farmers', {})
 
-  useEffect(() => {
-    if (farmer && localStorage.getItem('token')) {
-      api.get('/biomass').then(res => setListings(res.data.map(mapBackendListingToFrontend))).catch(err => console.error(err))
-      api.get('/orders/mine').then(res => setOrders(res.data.map(mapOrder))).catch(err => console.error(err))
-    }
+  const refreshFarmerData = useCallback(() => {
+    if (!farmer || !localStorage.getItem('token')) return
+    Promise.all([
+      api.get('/biomass/mine').then(res => res.data.map(mapBackendListingToFrontend)).catch(() => []),
+      api.get('/biomass').then(res => res.data.map(mapBackendListingToFrontend)).catch(() => []),
+    ]).then(([mineItems, activeItems]) => {
+      const merged = new Map<string, Listing>()
+      for (const item of activeItems) merged.set(item.id, item)
+      for (const item of mineItems) merged.set(item.id, item)
+      if (merged.size > 0) setListings(Array.from(merged.values()))
+    })
+    api.get('/orders/mine').then(res => setOrders(res.data.map(mapOrder))).catch(err => console.error(err))
   }, [farmer, setListings, setOrders])
+
+  useEffect(() => {
+    refreshFarmerData()
+  }, [refreshFarmerData])
+
+  // Auto-poll while AI verification (3s async on backend) is in PENDING_APPROVAL
+  const hasPendingApproval = useMemo(
+    () => listings.some(item => item.status === 'PENDING_APPROVAL'),
+    [listings],
+  )
+  useEffect(() => {
+    if (!hasPendingApproval || !farmer || !localStorage.getItem('token')) return
+    const timer = window.setInterval(refreshFarmerData, 3500)
+    return () => window.clearInterval(timer)
+  }, [hasPendingApproval, farmer, refreshFarmerData])
 
   const saveFarmer = (next: Farmer) => {
     const normalized: Farmer = {
@@ -46,22 +68,34 @@ export default function FarmerApp({ listings, setListings, orders, setOrders, bi
     setRegistry(old => ({ ...old, [normalized.email]: normalized }))
   }
 
-  const mine = useMemo(() => (farmer ? listings.filter(item => item.farmerEmail?.toLowerCase() === farmer.email.toLowerCase()) : []), [farmer, listings])
+  const mine = useMemo(
+    () => (farmer ? listings.filter(item => !item.farmerEmail || item.farmerEmail.toLowerCase() === farmer.email.toLowerCase()) : []),
+    [farmer, listings],
+  )
   const myOrders = useMemo(() => {
     if (!farmer) return []
     const ids = new Set(mine.map(item => item.id))
-    return orders.filter(order => order.farmerEmail?.toLowerCase() === farmer.email.toLowerCase() || ids.has(order.listingId))
+    return orders
+      .filter(order => order.orderType !== 'ECO_PRODUCT')
+      .filter(order => !order.farmerEmail || order.farmerEmail.toLowerCase() === farmer.email.toLowerCase() || ids.has(order.listingId))
   }, [farmer, mine, orders])
 
   const context: FarmerContextValue | null = farmer
     ? { farmer, saveFarmer, allListings: listings, setListings, listings: mine, orders: myOrders, setOrders, bids }
     : null
 
+  const handleLogout = () => {
+    clearSessionStorage()
+    setFarmer(null)
+    setListings([])
+    setOrders([])
+  }
+
   return (
     <Routes>
       <Route path="login" element={farmer ? <Navigate to="/farmer" replace /> : <FarmerAuth registry={registry} onAuth={saveFarmer} />} />
       <Route path="register" element={farmer ? <Navigate to="/farmer" replace /> : <FarmerAuth register registry={registry} onAuth={saveFarmer} />} />
-      <Route element={context ? <FarmerContext.Provider value={context}><FarmerLayout onLogout={() => { setFarmer(null); localStorage.removeItem('token'); }} /></FarmerContext.Provider> : <Navigate to="/farmer/login" replace />}>
+      <Route element={context ? <FarmerContext.Provider value={context}><FarmerLayout onLogout={handleLogout} /></FarmerContext.Provider> : <Navigate to="/farmer/login" replace />}>
         <Route index element={<FarmerDashboard />} />
         <Route path="listings" element={<MyListings />} />
         <Route path="listings/new" element={<ListingFormPage />} />
@@ -85,60 +119,74 @@ function FarmerAuth({ register = false, registry, onAuth }: { register?: boolean
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+
   const submit = async (event: FormEvent) => {
     event.preventDefault()
+    if (submitting) return
     const key = email.trim().toLowerCase()
-    
+
     if (!key.includes('@') || password.length < 6) {
       setError('Enter a valid email and a password with at least 6 characters.')
       return
     }
-    
+
+    setSubmitting(true)
+    setError('')
     try {
-        const stored = registry[key]
-        if (register) {
-            const response = await api.post('/auth/register', {
-                name: name.trim(),
-                email: key,
-                phone: phone.trim() || '0000000000',
-                password,
-                role: 'FARMER',
-                organizationName: farmName.trim(),
-                state,
-                district: district.trim()
-            });
-            localStorage.setItem('token', response.data.token);
-            const u = response.data.user || {};
-            onAuth({
-                name: u.name || name.trim(),
-                email: u.email || key,
-                phone: u.phone || phone.trim(),
-                farmName: u.organizationName || farmName.trim(),
-                state: u.state || state,
-                district: u.district || district.trim(),
-                pickupAddress: u.address || stored?.pickupAddress || '',
-                notifyOrders: true,
-                notifyBids: true,
-            });
-        } else {
-            const response = await api.post('/auth/login', { email: key, password });
-            localStorage.setItem('token', response.data.token);
-            const u = response.data.user || {};
-            onAuth({
-                name: u.name || stored?.name || 'Farmer',
-                email: u.email || key,
-                phone: u.phone || stored?.phone || '',
-                farmName: u.organizationName || stored?.farmName || '',
-                state: u.state || stored?.state || '',
-                district: u.district || stored?.district || '',
-                pickupAddress: u.address || stored?.pickupAddress || '',
-                notifyOrders: stored?.notifyOrders ?? true,
-                notifyBids: stored?.notifyBids ?? true,
-            });
+      const stored = registry[key]
+      if (register) {
+        const response = await api.post('/auth/register', {
+          name: name.trim(),
+          email: key,
+          phone: phone.trim() || '0000000000',
+          password,
+          role: 'FARMER',
+          organizationName: farmName.trim(),
+          state,
+          district: district.trim(),
+        })
+        const u = response.data.user || {}
+        localStorage.removeItem('agri-buyer')
+        localStorage.setItem('token', response.data.token)
+        onAuth({
+          name: u.name || name.trim(),
+          email: u.email || key,
+          phone: u.phone || phone.trim(),
+          farmName: u.organizationName || farmName.trim(),
+          state: u.state || state,
+          district: u.district || district.trim(),
+          pickupAddress: u.address || stored?.pickupAddress || '',
+          notifyOrders: true,
+          notifyBids: true,
+        })
+      } else {
+        const response = await api.post('/auth/login', { email: key, password })
+        const u = response.data.user || {}
+        if (u.role && u.role !== 'FARMER') {
+          setError(`This account is registered as ${u.role.toLowerCase()}. Please use the Industry Buyer portal to sign in.`)
+          setSubmitting(false)
+          return
         }
-        navigate('/farmer')
+        localStorage.removeItem('agri-buyer')
+        localStorage.setItem('token', response.data.token)
+        onAuth({
+          name: u.name || stored?.name || 'Farmer',
+          email: u.email || key,
+          phone: u.phone || stored?.phone || '',
+          farmName: u.organizationName || stored?.farmName || '',
+          state: u.state || stored?.state || '',
+          district: u.district || stored?.district || '',
+          pickupAddress: u.address || stored?.pickupAddress || '',
+          notifyOrders: stored?.notifyOrders ?? true,
+          notifyBids: stored?.notifyBids ?? true,
+        })
+      }
+      navigate('/farmer')
     } catch (err: any) {
-        setError(err?.response?.data?.message || 'Invalid credentials or server error. Is your Spring Boot app running?')
+      setError(err?.response?.data?.message || 'Invalid credentials or server error. Make sure the Spring Boot backend is running.')
+    } finally {
+      setSubmitting(false)
     }
   }
 
@@ -172,11 +220,12 @@ function FarmerAuth({ register = false, registry, onAuth }: { register?: boolean
             <label>Email<input type="email" required value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" autoComplete="email" /></label>
             <label>Password<input type="password" required minLength={6} value={password} onChange={e => setPassword(e.target.value)} placeholder="At least 6 characters" autoComplete={register ? 'new-password' : 'current-password'} /></label>
             {error && <p className="form-error">{error}</p>}
-            {!register && <div className="form-meta"><label className="check-label"><input type="checkbox" /> Remember me</label><button type="button" className="text-button" onClick={() => setError('For this demo, use any valid email and a password with 6+ characters.')}>Forgot password?</button></div>}
-            <button className="button button-primary button-full" type="submit">{register ? 'Create farmer account' : 'Sign in'} <ArrowRight size={17} /></button>
+            <button className="button button-primary button-full" type="submit" disabled={submitting}>
+              {submitting ? (register ? 'Creating account…' : 'Signing in…') : (register ? 'Create farmer account' : 'Sign in')} <ArrowRight size={17} />
+            </button>
           </form>
           <p className="auth-switch">{register ? 'Already have an account?' : 'New to AgriRevive?'} <Link to={register ? '/farmer/login' : '/farmer/register'}>{register ? 'Sign in' : 'Create an account'}</Link></p>
-          <p className="demo-note"><ShieldCheck size={14} /> Demo account is stored locally in this browser.</p>
+          <p className="demo-note"><ShieldCheck size={14} /> Verified farmer marketplace portal.</p>
           <p className="auth-switch auth-role-switch">Looking to buy biomass? <Link to="/login">Industry buyer sign in</Link></p>
         </section>
       </div>
@@ -230,7 +279,7 @@ function FarmerLayout({ onLogout }: { onLogout: () => void }) {
         <header className="topbar">
           <button className="icon-button mobile-menu" aria-label="Open navigation" onClick={() => setMobileOpen(true)}><Menu size={20} /></button>
           <div className="crumb"><span>Farmer portal</span><span className="crumb-slash">/</span><strong>{pageTitle(location.pathname)}</strong></div>
-          <div className="topbar-right"><span className="demo-pill"><span /> DEMO WORKSPACE</span><Link to="/farmer/orders" className="icon-button notification-button" aria-label={pending ? `${pending} order requests waiting` : 'Notifications'}><Bell size={18} />{pending > 0 && <i />}</Link><span className="topbar-divider" /><span className="avatar avatar-small">{initial}</span></div>
+          <div className="topbar-right"><span className="demo-pill"><span /> FARMER WORKSPACE</span><Link to="/farmer/orders" className="icon-button notification-button" aria-label={pending ? `${pending} order requests waiting` : 'Notifications'}><Bell size={18} />{pending > 0 && <i />}</Link><span className="topbar-divider" /><span className="avatar avatar-small">{initial}</span></div>
         </header>
         <main className="page-content"><Outlet /></main>
         <footer className="footer"><span>© 2026 AgriRevive</span><span>Growing a circular future <Sprout size={12} /></span></footer>
@@ -238,4 +287,3 @@ function FarmerLayout({ onLogout }: { onLogout: () => void }) {
     </div>
   )
 }
-

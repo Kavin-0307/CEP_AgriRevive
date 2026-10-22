@@ -4,11 +4,11 @@ import jakarta.persistence.*;
 import lombok.*;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
-
+import java.io.Serializable;
 @Entity
 @Table(name="eco_products")
 @Getter@Setter@NoArgsConstructor@AllArgsConstructor@Builder
-public class EcoProduct {
+public class EcoProduct implements Serializable {
 	@Id
 	@GeneratedValue(strategy=GenerationType.IDENTITY)
 	private Long id;

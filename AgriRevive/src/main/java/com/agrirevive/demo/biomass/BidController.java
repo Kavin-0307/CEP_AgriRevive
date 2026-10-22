@@ -1,5 +1,6 @@
 package com.agrirevive.demo.biomass;
 import com.agrirevive.demo.bidding.Bid;
+import org.springframework.cache.annotation.CacheEvict;
 import com.agrirevive.demo.bidding.BidRepository;
 import com.agrirevive.demo.biomass.dto.BidRequestDTO;
 import com.agrirevive.demo.biomass.dto.BidResponseDTO;
@@ -32,9 +33,11 @@ public class BidController {
 		if(principal==null)return;
 		User bidder=userRepository.findByEmail(principal.getName()).orElseThrow();
 		BiomassListing listing=listingRepository.findById(request.getListingId()).orElseThrow();
-		if(!"AUCTION".equals(listing.getListingType()))return;
+		if(!"AUCTION".equals(listing.getListingType())||!"ACTIVE".equals(listing.getStatus()))return;
 		if(listing.getAuctionEndTime()!=null&&LocalDateTime.now().isAfter(listing.getAuctionEndTime()))return;
-		if(listing.getHighestBidAmount()!=null&&request.getAmount().compareTo(listing.getHighestBidAmount())<0)return;
+		if(listing.getFarmer().getId().equals(bidder.getId()))return;
+		if(listing.getHighestBidAmount()!=null&&request.getAmount().compareTo(listing.getHighestBidAmount())<=0)return;
+		if(listing.getHighestBidAmount()==null&&request.getAmount().compareTo(listing.getPricePerTonne())<0)return;
 		Bid bid=Bid.builder().listing(listing).bidder(bidder).amount(request.getAmount()).build();
 		bidRepository.save(bid);
 		listing.setHighestBidAmount(request.getAmount());

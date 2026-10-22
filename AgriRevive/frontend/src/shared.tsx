@@ -2,7 +2,13 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Leaf } from 'lucide-react'
 
-export type ListingStatus = 'PENDING_APPROVAL' | 'ACTIVE' | 'PAUSED' | 'SOLD_OUT' | 'CLOSED'
+export type ListingStatus = 'PENDING_APPROVAL' | 'ACTIVE' | 'REJECTED' | 'PAUSED' | 'SOLD_OUT' | 'CLOSED'
+
+export type ResidueTypeDTO = {
+  id: number
+  name: string
+  description?: string
+}
 
 export type Listing = {
   id: string
@@ -22,13 +28,14 @@ export type Listing = {
   auctionEnds?: string
   highestBid?: number
   bidCount?: number
-  // Farmer-side fields. Seed listings have none of these and stay publicly visible.
   farmerEmail?: string
   farmerName?: string
   district?: string
   pickupAddress?: string
   availableFrom?: string
   status?: ListingStatus
+  aiVerifiedStatus?: string
+  adminRemarks?: string
   createdAt?: string
 }
 
@@ -45,7 +52,7 @@ export type BuyerOrder = {
   total: number
   status: OrderStatus
   date: string
-  // Added for the farmer side (all optional so older saved orders still load).
+  orderType?: string
   farmerEmail?: string
   buyerName?: string
   buyerOrganization?: string
@@ -55,6 +62,7 @@ export type BuyerOrder = {
   vehicleNumber?: string
   pickupNotes?: string
   deliveryRemarks?: string
+  subsidyClaimed?: boolean
 }
 
 export type BidRecord = {
@@ -77,53 +85,8 @@ export type Farmer = {
   notifyBids: boolean
 }
 
-export const initialListings: Listing[] = [
-  {
-    id: 'ag-2048', title: 'Premium rice straw', type: 'Rice straw', location: 'Ludhiana, Punjab', state: 'Punjab',
-    quantity: 28, price: 1800, grade: 'A', moisture: 12, available: 'Oct 12, 2026',
-    description: 'Clean, sun-dried paddy straw from the latest harvest. Baled and ready for pickup with consistent quality across the lot.',
-    image: 'https://images.unsplash.com/photo-1500382017468-9049fed747ef?auto=format&fit=crop&w=1200&q=85',
-    color: 'sage', listingType: 'FIXED_PRICE',
-  },
-  {
-    id: 'ag-2049', title: 'Sugarcane bagasse', type: 'Bagasse', location: 'Kolhapur, Maharashtra', state: 'Maharashtra',
-    quantity: 62, price: 1150, grade: 'A', moisture: 18, available: 'Oct 16, 2026',
-    description: 'Uniform fibrous bagasse from a local sugar mill. Ideal for bioenergy applications, supplied in bulk by the tonne.',
-    image: 'https://images.unsplash.com/photo-1595841696677-6489ff3f8cd1?auto=format&fit=crop&w=1200&q=85',
-    color: 'gold', listingType: 'AUCTION', auctionEnds: '2026-10-08T18:00:00', highestBid: 1280, bidCount: 8,
-  },
-  {
-    id: 'ag-2050', title: 'Cotton stalk bales', type: 'Cotton stalk', location: 'Nagpur, Maharashtra', state: 'Maharashtra',
-    quantity: 15, price: 2400, grade: 'B', moisture: 15, available: 'Oct 10, 2026',
-    description: 'Mechanically harvested cotton stalks, neatly bundled for transport. Available from a verified farmer cooperative.',
-    image: 'https://images.unsplash.com/photo-1464226184884-fa280b87c399?auto=format&fit=crop&w=1200&q=85',
-    color: 'rust', listingType: 'FIXED_PRICE',
-  },
-  {
-    id: 'ag-2051', title: 'Wheat straw · Grade A', type: 'Wheat straw', location: 'Karnal, Haryana', state: 'Haryana',
-    quantity: 40, price: 1650, grade: 'A', moisture: 10, available: 'Oct 14, 2026',
-    description: 'Low-moisture wheat straw sourced from a small farmer group. Suitable for animal bedding and biomass processing.',
-    image: 'https://images.unsplash.com/photo-1574323347407-f5e1ad6d020b?auto=format&fit=crop&w=1200&q=85',
-    color: 'wheat', listingType: 'FIXED_PRICE',
-  },
-  {
-    id: 'ag-2052', title: 'Groundnut shells', type: 'Groundnut shells', location: 'Junagadh, Gujarat', state: 'Gujarat',
-    quantity: 22, price: 2100, grade: 'B', moisture: 13, available: 'Oct 18, 2026',
-    description: 'Dry, screened groundnut shells stored under cover. A dependable fuel feedstock with reliable year-round supply.',
-    image: 'https://images.unsplash.com/photo-1601593768794-35f4d8e137c2?auto=format&fit=crop&w=1200&q=85',
-    color: 'olive', listingType: 'AUCTION', auctionEnds: '2026-10-06T15:30:00', highestBid: 2250, bidCount: 12,
-  },
-  {
-    id: 'ag-2053', title: 'Maize cobs & husk', type: 'Maize residue', location: 'Dewas, Madhya Pradesh', state: 'Madhya Pradesh',
-    quantity: 34, price: 1350, grade: 'B', moisture: 16, available: 'Oct 20, 2026',
-    description: 'Mixed maize cobs and husk collected after shelling. Packed loose and ready for bulk collection.',
-    image: 'https://images.unsplash.com/photo-1551754655-cd27e38d2076?auto=format&fit=crop&w=1200&q=85',
-    color: 'corn', listingType: 'FIXED_PRICE',
-  },
-]
-
 export const currency = (amount: number) =>
-  new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(amount)
+  new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(Number.isFinite(amount) ? amount : 0)
 
 export function readStored<T>(key: string, fallback: T): T {
   try {
@@ -157,20 +120,34 @@ export const INDIAN_STATES = [
 
 const RICE = 'https://images.unsplash.com/photo-1500382017468-9049fed747ef?auto=format&fit=crop&w=1200&q=85'
 
-export const RESIDUE_TYPES: { name: string; color: string; image: string }[] = [
-  { name: 'Rice straw', color: 'sage', image: RICE },
-  { name: 'Wheat straw', color: 'wheat', image: 'https://images.unsplash.com/photo-1574323347407-f5e1ad6d020b?auto=format&fit=crop&w=1200&q=85' },
-  { name: 'Bagasse', color: 'gold', image: 'https://images.unsplash.com/photo-1595841696677-6489ff3f8cd1?auto=format&fit=crop&w=1200&q=85' },
-  { name: 'Cotton stalk', color: 'rust', image: 'https://images.unsplash.com/photo-1464226184884-fa280b87c399?auto=format&fit=crop&w=1200&q=85' },
-  { name: 'Groundnut shells', color: 'olive', image: 'https://images.unsplash.com/photo-1601593768794-35f4d8e137c2?auto=format&fit=crop&w=1200&q=85' },
-  { name: 'Maize residue', color: 'corn', image: 'https://images.unsplash.com/photo-1551754655-cd27e38d2076?auto=format&fit=crop&w=1200&q=85' },
-  { name: 'Other residue', color: 'sage', image: RICE },
+export const RESIDUE_TYPES: { id: number; name: string; color: string; image: string }[] = [
+  { id: 1, name: 'Rice straw', color: 'sage', image: RICE },
+  { id: 2, name: 'Wheat straw', color: 'wheat', image: 'https://images.unsplash.com/photo-1574323347407-f5e1ad6d020b?auto=format&fit=crop&w=1200&q=85' },
+  { id: 3, name: 'Bagasse', color: 'gold', image: 'https://images.unsplash.com/photo-1595841696677-6489ff3f8cd1?auto=format&fit=crop&w=1200&q=85' },
+  { id: 4, name: 'Cotton stalk', color: 'rust', image: 'https://images.unsplash.com/photo-1464226184884-fa280b87c399?auto=format&fit=crop&w=1200&q=85' },
+  { id: 5, name: 'Groundnut shells', color: 'olive', image: 'https://images.unsplash.com/photo-1601593768794-35f4d8e137c2?auto=format&fit=crop&w=1200&q=85' },
+  { id: 6, name: 'Maize residue', color: 'corn', image: 'https://images.unsplash.com/photo-1551754655-cd27e38d2076?auto=format&fit=crop&w=1200&q=85' },
+  { id: 7, name: 'Other residue', color: 'sage', image: RICE },
 ]
 
-/** A listing buyers may see: not paused/under review/sold, and (for farmer-made auctions) not already ended. */
+export function residueMetaFor(typeName?: string) {
+  if (!typeName) return RESIDUE_TYPES[0]
+  const normalized = typeName.trim().toLowerCase()
+  return RESIDUE_TYPES.find(item => item.name.toLowerCase() === normalized) || RESIDUE_TYPES[0]
+}
+
+/** 'YYYY-MM-DD' -> 'Oct 12, 2026' */
+export function formatDisplayDate(isoDate?: string) {
+  if (!isoDate) return 'now'
+  const [y, m, d] = isoDate.slice(0, 10).split('-').map(Number)
+  if (!y || !m || !d) return isoDate
+  return new Date(y, m - 1, d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
+/** A listing buyers may see: ACTIVE and (for auctions) not already ended. */
 export function isPubliclyVisible(listing: Listing, now = Date.now()) {
   if (listing.status && listing.status !== 'ACTIVE') return false
-  if (listing.farmerEmail && listing.listingType === 'AUCTION' && listing.auctionEnds) {
+  if (listing.listingType === 'AUCTION' && listing.auctionEnds) {
     return new Date(listing.auctionEnds).getTime() > now
   }
   return true

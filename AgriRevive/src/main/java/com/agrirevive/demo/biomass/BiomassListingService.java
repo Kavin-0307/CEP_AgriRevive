@@ -7,6 +7,7 @@ import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.agrirevive.demo.common.BusinessRuleException;
 import com.agrirevive.demo.biomass.dto.BiomassListingRequest;
 import com.agrirevive.demo.common.ResourceNotFoundException;
 import com.agrirevive.demo.user.User;
@@ -29,8 +30,8 @@ public class BiomassListingService {
 	@Transactional
 	@CacheEvict(value="activeListings",allEntries=true)
 	public BiomassListing createListing(String farmerEmail,BiomassListingRequest req) {
-		User farmer=userRepository.findByEmail(farmerEmail).orElseThrow(()->new ResourceNotFoundException("ResidueType not found"));
-		ResidueType type=residueTypeRepository.findById(req.getResidueTypeId()).orElseThrow(()->new ResourceNotFoundException("Farmer not found"));
+		User farmer=userRepository.findByEmail(farmerEmail).orElseThrow(()->new ResourceNotFoundException("Farmer not found"));
+		ResidueType type=residueTypeRepository.findById(req.getResidueTypeId()).orElseThrow(()->new ResourceNotFoundException("Residue type not found"));
 		BiomassListing listing=BiomassListing.builder().farmer(farmer).residueType(type).title(req.getTitle()).description(req.getDescription())
 				.quantityAvailable(req.getQuantityAvailable()).pricePerTonne(req.getPricePerTonne()).moisturePercent(req.getMoisturePercent())
 				.state(req.getState()).district(req.getDistrict()).pickupAddress(req.getPickupAddress()).availableFrom(req.getAvailableFrom())
@@ -44,6 +45,27 @@ public class BiomassListingService {
 	@Cacheable(value="activeListings")
 	public List<BiomassListing> getActiveListings(){
 		return listingRepository.findByStatus("ACTIVE");
+	}
+	public List<BiomassListing> getMyListings(String farmerEmail){
+		User farmer=userRepository.findByEmail(farmerEmail).orElseThrow(()-> new ResourceNotFoundException("Farmer not found"));
+		return listingRepository.findByFarmerId(farmer.getId());
+	}
+	@Transactional
+	@CacheEvict(value="activeListings",allEntries=true)
+	public BiomassListing updateListing(Long id,String farmerEmail,BiomassListingRequest req) {
+		BiomassListing listing=listingRepository.findById(id).orElseThrow(()->new ResourceNotFoundException("Listing not found"));
+		if(!listing.getFarmer().getEmail().equals(farmerEmail))throw new BusinessRuleException("You do not own this listing");
+		listing.setTitle(req.getTitle());
+		listing.setDescription(req.getDescription());
+		listing.setQuantityAvailable(req.getQuantityAvailable());
+		listing.setPricePerTonne(req.getPricePerTonne());
+		listing.setMoisturePercent(req.getMoisturePercent());
+		listing.setState(req.getState());
+		listing.setDistrict(req.getDistrict());
+		listing.setPickupAddress(req.getPickupAddress());
+		listing.setQualityGrade(req.getQualityGrade());
+		listing.setAvailableFrom(req.getAvailableFrom());
+		return listingRepository.save(listing);
 	}
 	
 }

@@ -2,7 +2,7 @@ import { ArrowRight, Boxes, Clock3, Gavel, PackageCheck, PackagePlus, ShieldChec
 import { Link } from 'react-router-dom'
 import { currency } from '../shared'
 import { useFarmer } from './context'
-import { LISTING_STATUS, auctionPhase, bidsFor, timeLeft, topBid, useNow } from './helpers'
+import { auctionPhase, bidsFor, listingStatusMeta, timeLeft, topBid, useNow } from './helpers'
 
 export default function FarmerDashboard() {
   const { farmer, listings, orders, bids } = useFarmer()
@@ -12,6 +12,7 @@ export default function FarmerDashboard() {
 
   const active = listings.filter(item => item.status === 'ACTIVE' || !item.status)
   const underReview = listings.filter(item => item.status === 'PENDING_APPROVAL')
+  const rejected = listings.filter(item => item.status === 'REJECTED')
   const auctions = listings.filter(item => item.listingType === 'AUCTION')
   const liveAuctions = auctions.filter(item => auctionPhase(item, now) === 'LIVE')
   const endedAuctions = auctions.filter(item => auctionPhase(item, now) === 'ENDED')
@@ -23,8 +24,9 @@ export default function FarmerDashboard() {
   const todo: { key: string; text: string; sub: string; to: string }[] = [
     ...(requests.length ? [{ key: 'req', text: `${requests.length} purchase request${requests.length === 1 ? '' : 's'} waiting`, sub: 'Accept or decline so buyers can pay', to: '/farmer/orders' }] : []),
     ...(needPickup.length ? [{ key: 'pickup', text: `${needPickup.length} paid order${needPickup.length === 1 ? '' : 's'} ready for pickup`, sub: 'Schedule pickup with the buyer', to: '/farmer/orders' }] : []),
-    ...(endedAuctions.length ? [{ key: 'ended', text: `${endedAuctions.length} auction${endedAuctions.length === 1 ? '' : 's'} ended`, sub: 'Award the highest bidder, close or relist', to: '/farmer/auctions' }] : []),
-    ...(underReview.length ? [{ key: 'review', text: `${underReview.length} listing${underReview.length === 1 ? '' : 's'} under review`, sub: 'Buyers see them once approved', to: '/farmer/listings' }] : []),
+    ...(endedAuctions.length ? [{ key: 'ended', text: `${endedAuctions.length} auction${endedAuctions.length === 1 ? '' : 's'} ended`, sub: 'Review results on the Auctions page', to: '/farmer/auctions' }] : []),
+    ...(underReview.length ? [{ key: 'review', text: `${underReview.length} listing${underReview.length === 1 ? '' : 's'} under AI quality review`, sub: 'Automatically verified within seconds', to: '/farmer/listings' }] : []),
+    ...(rejected.length ? [{ key: 'rejected', text: `${rejected.length} listing${rejected.length === 1 ? '' : 's'} rejected by AI`, sub: 'Check moisture level and edit to resubmit', to: '/farmer/listings' }] : []),
   ]
 
   return (
@@ -39,7 +41,7 @@ export default function FarmerDashboard() {
       </section>
 
       <section className="metric-grid">
-        <article className="metric-card"><div className="metric-top"><span>Active listings</span><span className="metric-icon mint"><Boxes size={18} /></span></div><strong className="metric-value">{String(active.length).padStart(2, '0')}</strong><span className="metric-detail">{underReview.length ? `${underReview.length} under review` : 'Visible to buyers'}</span></article>
+        <article className="metric-card"><div className="metric-top"><span>Active listings</span><span className="metric-icon mint"><Boxes size={18} /></span></div><strong className="metric-value">{String(active.length).padStart(2, '0')}</strong><span className="metric-detail">{underReview.length ? `${underReview.length} under AI review` : 'Visible to buyers'}</span></article>
         <article className="metric-card"><div className="metric-top"><span>Live auctions</span><span className="metric-icon peach"><Gavel size={18} /></span></div><strong className="metric-value">{String(liveAuctions.length).padStart(2, '0')}</strong><span className="metric-detail">{totalBids} bid{totalBids === 1 ? '' : 's'} received in total</span></article>
         <article className="metric-card"><div className="metric-top"><span>Order requests</span><span className="metric-icon lavender"><PackageCheck size={18} /></span></div><strong className="metric-value">{String(requests.length).padStart(2, '0')}</strong><span className="metric-detail">{requests.length ? 'Awaiting your response' : 'You are all caught up'}</span></article>
         <article className="metric-card"><div className="metric-top"><span>Confirmed sales</span><span className="metric-icon cream"><Wallet size={18} /></span></div><strong className="metric-value">{currency(sales)}</strong><span className="metric-detail">Paid, in transit or delivered</span></article>
@@ -73,7 +75,7 @@ export default function FarmerDashboard() {
         <section className="section-block">
           <div className="section-heading"><div><span className="eyebrow">YOUR CATALOGUE</span><h2>Recent listings</h2></div><Link to="/farmer/listings" className="subtle-link">Manage listings <ArrowRight size={15} /></Link></div>
           <div className="fm-mini-list">{[...listings].sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? '')).slice(0, 4).map(item => {
-            const meta = LISTING_STATUS[item.status ?? 'ACTIVE']
+            const meta = listingStatusMeta(item.status)
             return <Link key={item.id} to={`/farmer/listings/${item.id}/edit`} className="fm-mini-row"><span className={`auction-thumb ${item.color}`} style={{ backgroundImage: `url("${item.image}")` }} /><span className="auction-info"><strong>{item.title}</strong><small>{item.quantity} t · {item.location}</small></span><span className={`status-pill ${meta.tone}`}><i />{meta.label}</span><span className="auction-price"><strong>{currency(item.price)}</strong><small>{item.listingType === 'AUCTION' ? 'starting / t' : 'per tonne'}</small></span></Link>
           })}</div>
         </section>

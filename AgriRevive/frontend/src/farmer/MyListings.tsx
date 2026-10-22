@@ -3,7 +3,7 @@ import { Check, Gavel, Pause, PencilLine, PackagePlus, Play, Trash2, TriangleAle
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { currency, type Listing } from '../shared'
 import { useFarmer } from './context'
-import { LISTING_STATUS, bidsFor, timeLeft, topBid, useNow } from './helpers'
+import { bidsFor, listingStatusMeta, timeLeft, topBid, useNow } from './helpers'
 
 const TABS = ['All', 'Active', 'Under review', 'Auctions', 'Paused / ended'] as const
 type Tab = (typeof TABS)[number]
@@ -28,7 +28,7 @@ export default function MyListings() {
       : which === 'Active' ? status(item) === 'ACTIVE'
         : which === 'Under review' ? status(item) === 'PENDING_APPROVAL'
           : which === 'Auctions' ? item.listingType === 'AUCTION'
-            : ['PAUSED', 'CLOSED', 'SOLD_OUT'].includes(status(item))
+            : ['PAUSED', 'CLOSED', 'SOLD_OUT', 'REJECTED'].includes(status(item))
   const shown = listings.filter(item => matches(item, tab))
 
   const update = (id: string, patch: Partial<Listing>) => setListings(old => old.map(item => item.id === id ? { ...item, ...patch } : item))
@@ -37,7 +37,7 @@ export default function MyListings() {
   const confirmDelete = () => {
     if (!toDelete) return
     setListings(old => old.filter(item => item.id !== toDelete.id))
-    setFlash(`“${toDelete.title}” was deleted.`)
+    setFlash(`“${toDelete.title}” was removed from your workspace.`)
     setToDelete(null)
   }
   const blockingOrders = toDelete ? openOrdersFor(toDelete) : []
@@ -58,20 +58,24 @@ export default function MyListings() {
           <table className="orders-table fm-table">
             <thead><tr><th>LISTING</th><th>TYPE</th><th>QUANTITY</th><th>PRICE</th><th>STATUS</th><th>ACTIONS</th></tr></thead>
             <tbody>{shown.map(item => {
-              const meta = LISTING_STATUS[status(item)]
+              const meta = listingStatusMeta(status(item))
               const isAuction = item.listingType === 'AUCTION'
               const top = isAuction ? topBid(item, bids) : null
               const canToggle = status(item) === 'ACTIVE' || status(item) === 'PAUSED'
               return (
                 <tr key={item.id}>
-                  <td><div className="order-product"><span className={`order-product-img ${item.color}`} style={{ backgroundImage: `url("${item.image}")` }} /><span><strong>{item.title}</strong><small>{item.type} · {item.location}</small></span></div></td>
+                  <td><div className="order-product"><span className={`order-product-img ${item.color}`} style={{ backgroundImage: `url("${item.image}")` }} /><span><strong>{item.title}</strong><small>{item.type} · {item.location} · {item.moisture}% moisture</small></span></div></td>
                   <td>{isAuction ? <span className="fm-type-chip auction"><Gavel size={11} /> Auction</span> : <span className="fm-type-chip">Fixed price</span>}{isAuction && <small className="fm-sub">{timeLeft(item.auctionEnds, now)}</small>}</td>
                   <td><strong>{item.quantity} t</strong><small className="fm-sub">Grade {item.grade}</small></td>
                   <td><strong>{currency(top?.amount ?? item.price)}</strong><small className="fm-sub">{isAuction ? (top ? `highest of ${bidsFor(item.id, bids).length || 'recorded'} bids` : 'starting price') : 'per tonne'}</small></td>
-                  <td><span className={`status-pill ${meta.tone}`}><i />{meta.label}</span></td>
+                  <td>
+                    <span className={`status-pill ${meta.tone}`}><i />{meta.label}</span>
+                    {status(item) === 'REJECTED' && item.adminRemarks && (
+                      <small className="fm-sub" title={item.adminRemarks}>{item.adminRemarks}</small>
+                    )}
+                  </td>
                   <td>
                     <div className="fm-actions">
-                      {status(item) === 'PENDING_APPROVAL' && <button className="table-action" onClick={() => update(item.id, { status: 'ACTIVE' })} title="Demo only: real listings are approved by the AgriRevive team">Demo: approve <Check size={13} /></button>}
                       {canToggle && !isAuction && <button className="icon-button" onClick={() => update(item.id, { status: status(item) === 'ACTIVE' ? 'PAUSED' : 'ACTIVE' })} aria-label={status(item) === 'ACTIVE' ? 'Pause listing' : 'Resume listing'} title={status(item) === 'ACTIVE' ? 'Pause listing' : 'Resume listing'}>{status(item) === 'ACTIVE' ? <Pause size={16} /> : <Play size={16} />}</button>}
                       {isAuction && <Link className="icon-button" to="/farmer/auctions" aria-label="Manage auction" title="Manage auction"><Gavel size={16} /></Link>}
                       <Link className="icon-button" to={`/farmer/listings/${item.id}/edit`} aria-label={`Edit ${item.title}`} title="Edit"><PencilLine size={16} /></Link>

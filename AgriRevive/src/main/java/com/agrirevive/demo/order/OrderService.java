@@ -14,6 +14,7 @@ import org.springframework.kafka.core.KafkaTemplate;
 import com.agrirevive.demo.kafka.dto.OrderPlacedEvent;
 import java.math.BigDecimal;
 import java.util.List;
+import org.springframework.cache.annotation.CacheEvict;
 @Service
 public class OrderService {
 	private final OrderRepository orderRepository;
@@ -36,10 +37,14 @@ public class OrderService {
 		if(!"ACTIVE".equals(listing.getStatus()))throw new BusinessRuleException("Listing not available");
 		if(listing.getQuantityAvailable().compareTo(req.getQuantity())<0) throw new BusinessRuleException("Stock not enough");
 		listing.setQuantityAvailable(listing.getQuantityAvailable().subtract(req.getQuantity()));
-		if(listing.getQuantityAvailable().compareTo(BigDecimal.ZERO)==0)listing.setStatus("SOLD_OUT");
+		if(listing.getQuantityAvailable().compareTo(BigDecimal.ZERO)==0)listing.setStatus("SOLD_OUT");		
+		
 		biomassRepository.save(listing);
+		BigDecimal unitPrice=listing.getPricePerTonne();
+		BigDecimal totalAmount=req.getQuantity().multiply(unitPrice);
+		
 		Order order=Order.builder().orderType("BIOMASS").buyer(buyer).seller(listing.getFarmer())
-				.listingId(listing.getId()).quantity(req.getQuantity()).pricePerUnit(req.getOfferedPrice()).totalAmount(req.getQuantity().multiply(req.getOfferedPrice()))
+				.listingId(listing.getId()).quantity(req.getQuantity()).pricePerUnit(unitPrice).totalAmount(totalAmount)
 				.status("REQUESTED").deliveryAddress(req.getDeliveryAddress()).buyerNote(req.getBuyerNote()).build();
 		Order savedOrder=orderRepository.save(order);
 		OrderPlacedEvent event=new OrderPlacedEvent(savedOrder.getId(),savedOrder.getOrderType(),
@@ -79,6 +84,15 @@ public class OrderService {
 		User user=userRepository.findByEmail(userEmail).orElseThrow(()->new ResourceNotFoundException("User Not Found"));
 		if(!order.getBuyer().getId().equals(user.getId())&&!order.getSeller().getId().equals(user.getId()))
 			throw new BusinessRuleException("You do not have permission to update the order");
+		if("REJECTED".equals(newStatus)&&!"REJECTED".equals(order.getStatus())) {
+			BiomassListing listing=biomassRepository.findById(order.getListingId()).orElse(null);
+		if(listing!=null) {
+			listing.setQuantityAvailable(listing.getQuantityAvailable().add(order.getQuantity()));
+			if("SOLD_OUT".equals(listing.getStatus()))listing.setStatus("ACTIVE");
+			biomassRepository.save(listing);
+		}
+		}
+		
 		order.setStatus(newStatus);
 		return orderRepository.save(order);
 	}

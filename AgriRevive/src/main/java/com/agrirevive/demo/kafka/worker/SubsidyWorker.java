@@ -6,7 +6,7 @@ import org.springframework.stereotype.Component;
 import java.math.BigDecimal;
 @Component
 public class SubsidyWorker {
-	@KafkaListener(topics="biomass-orders",groupId="agrirevive-group")
+	@KafkaListener(topics="biomass-orders",groupId="agrirevive-subsidies")
 	public void processSubsidies(OrderPlacedEvent event) {
 		BigDecimal estimatedSubsidy=event.totalAmount().multiply(new BigDecimal("0.10"));
 		System.out.println("=========================================");

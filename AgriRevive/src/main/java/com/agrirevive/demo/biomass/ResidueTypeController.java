@@ -13,7 +13,7 @@ public class ResidueTypeController {
 		this.residueTypeRepository=residueTypeRepository;
 	}
 	@GetMapping
-	@PreAuthorize("isAuthenticated")
+	@PreAuthorize("isAuthenticated()")
 	public List<ResidueType> getAllTypes(){
 		return residueTypeRepository.findAll();
 	}

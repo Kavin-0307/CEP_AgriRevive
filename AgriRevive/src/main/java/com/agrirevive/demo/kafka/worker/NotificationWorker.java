@@ -4,7 +4,7 @@ import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 @Component
 public class NotificationWorker {
-	@KafkaListener(topics="biomass-orders",groupId="agrirevive-group")
+	@KafkaListener(topics="biomass-orders",groupId="agrirevive-notifications")
 	public void HandleOrderPlaced(OrderPlacedEvent event) {
 		System.out.println("=========================================");
 		System.out.println("KAFKA WORKER 1:NOTIFICATION SERVICE");

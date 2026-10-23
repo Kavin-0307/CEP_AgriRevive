@@ -8,7 +8,9 @@ import {
   type ResidueTypeDTO,
 } from './shared'
 
-const API_BASE_URL = (import.meta as any).env?.VITE_API_URL || 'http://localhost:8080/api'
+const isLocal = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+const defaultApiUrl = isLocal ? 'http://localhost:8080/api' : `${window.location.origin}/api`
+const API_BASE_URL = (import.meta as any).env?.VITE_API_URL || defaultApiUrl
 export const WS_URL = API_BASE_URL.replace(/\/api\/?$/, '') + '/ws'
 
 export function clearSessionStorage() {

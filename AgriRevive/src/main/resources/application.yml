@@ -1,8 +1,13 @@
 spring:
- application:
-  name: agrirevive
- profiles:
-  active: dev
- flyway:
-  enabled: true
-  baseline-on-migrate: true
+  application:
+    name: agrirevive
+  profiles:
+    active: dev
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+
+app:
+  jwt:
+    secret: ${APP_JWT_SECRET:4KYQDrqkdI4WhZ+59TQavg4ySySUM3uohcx0ZHvml/Y=}
+    expirations: ${APP_JWT_EXPIRATIONS:86400000}

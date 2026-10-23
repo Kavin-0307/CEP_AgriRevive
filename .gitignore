@@ -31,6 +31,10 @@ bin/
 .env.*
 *.properties.local
 *.yml.local
+*.key
+*.pem
+*.pub
+id_rsa*
 
 # Operating System Files
 .DS_Store

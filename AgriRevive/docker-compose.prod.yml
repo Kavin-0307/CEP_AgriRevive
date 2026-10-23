@@ -11,6 +11,11 @@ services:
     volumes:
       - postgres-data:/var/lib/postgresql/data
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d agrirevive_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
     networks:
       - agri-network
 
@@ -20,6 +25,11 @@ services:
     volumes:
       - redis-data:/data
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
     networks:
       - agri-network
 
@@ -37,6 +47,8 @@ services:
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      CLUSTER_ID: "4L622nShTUiBenA3heKdRw"
+      KAFKA_HEAP_OPTS: "-Xms128m -Xmx256m"
     restart: unless-stopped
     networks:
       - agri-network
@@ -54,10 +66,15 @@ services:
       SPRING_DATA_REDIS_HOST: redis
       SPRING_DATA_REDIS_PORT: 6379
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      APP_JWT_SECRET: "4KYQDrqkdI4WhZ+59TQavg4ySySUM3uohcx0ZHvml/Y="
+      APP_JWT_EXPIRATIONS: 86400000
     depends_on:
-      - postgres
-      - redis
-      - kafka
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_started
     restart: unless-stopped
     networks:
       - agri-network

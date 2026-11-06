@@ -23,7 +23,7 @@ services:
       - redis-data:/data
     restart: unless-stopped
   kafka:
-    image: bitnami/kafka:3.5
+    image: soldevelo/kafka:3.5
     container_name: agrirevive-kafka
     ports:
       - "9092:9092"
